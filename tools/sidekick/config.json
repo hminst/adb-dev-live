@@ -1,0 +1,15 @@
+{
+    "sidekick": {
+      "project": "Author Kit Demo",
+      "editUrlLabel": "Document Authoring",
+      "editUrlPattern": "https://da.live/edit#/{{org}}/{{site}}{{pathname}}",
+      "plugins": [
+        {
+          "id": "view-tags",
+          "titleI18n": { "en": "View tags" },
+          "environments": [ "dev", "preview" ],
+          "event": "view-tags"
+        }
+      ]
+    }
+  }
