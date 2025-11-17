@@ -1,0 +1,271 @@
+.carousel {
+  position: relative;
+  overflow: hidden;
+  background-color: light-dark(var(--color-gray-100), var(--color-gray-900));
+  height: 400px;
+
+  .carousel-slides {
+    display: flex;
+    transition: transform 0.5s ease-in-out;
+    height: 100%;
+    position: relative;
+  }
+
+  .carousel-slide {
+    min-width: 100%;
+    width: 100%;
+    height: 100%;
+    opacity: 0;
+    transition: opacity 0.5s ease-in-out;
+    display: none;
+    position: relative;
+    overflow: visible;
+
+    &.is-active {
+      opacity: 1;
+      display: block;
+    }
+
+    :first-child {
+      margin-top: 0;
+    }
+
+    :last-child {
+      margin-bottom: 0;
+    }
+
+    /* Image container - fills slide as background */
+    .carousel-slide-image {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      padding: 0;
+      overflow: hidden;
+      z-index: 0;
+    }
+
+    .carousel-slide-image picture,
+    .carousel-slide-image img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      object-position: center;
+      display: block;
+      margin: 0;
+      padding: 0;
+    }
+
+    .carousel-slide-image p {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+    }
+
+    .carousel-slide-image picture {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Text container - positioned above image */
+    .carousel-slide-text {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: auto;
+      z-index: 3;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-start;
+      align-items: flex-start;
+      padding: var(--spacing-l);
+      color: light-dark(var(--color-light), var(--color-light));
+      min-height: auto;
+    }
+
+    .carousel-slide-text h1,
+    .carousel-slide-text h2,
+    .carousel-slide-text h3,
+    .carousel-slide-text h4,
+    .carousel-slide-text h5,
+    .carousel-slide-text h6 {
+      margin: 0 0 var(--spacing-s) 0;
+      text-shadow: 0 2px 4px rgba(0 0 0 / 80%);
+      font-weight: bold;
+    }
+
+    .carousel-slide-text p {
+      margin: 0;
+      text-shadow: 0 1px 3px rgba(0 0 0 / 80%);
+    }
+
+    /* Enable pointer events on interactive elements */
+    .carousel-slide-text a,
+    .carousel-slide-text button {
+      pointer-events: auto;
+      cursor: pointer;
+    }
+  }
+
+  .carousel-nav {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    transform: translateY(-50%);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    pointer-events: none;
+    z-index: 2;
+    padding: 0 var(--spacing-l);
+    box-sizing: border-box;
+  }
+
+  .carousel-button {
+    pointer-events: all;
+    background-color: rgba(255 255 255 / 80%);
+    border: 1px solid rgba(0 0 0 / 10%);
+    border-radius: 50%;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    backdrop-filter: blur(4px);
+    flex-shrink: 0;
+
+    span {
+      display: none;
+    }
+
+    &::before {
+      content: '';
+      width: 12px;
+      height: 12px;
+      border-style: solid;
+      border-color: currentColor;
+      border-width: 2px 2px 0 0;
+    }
+
+    &:hover {
+      background-color: rgba(255 255 255 / 95%);
+      transform: scale(1.1);
+    }
+
+    &:active {
+      transform: scale(0.95);
+    }
+
+    &:focus-visible {
+      outline: 2px solid currentColor;
+      outline-offset: 2px;
+    }
+  }
+
+  .carousel-button-prev::before {
+    transform: rotate(-135deg);
+  }
+
+  .carousel-button-next::before {
+    transform: rotate(45deg);
+  }
+
+  .carousel-indicators {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    display: flex;
+    justify-content: center;
+    gap: var(--spacing-xs);
+    padding: var(--spacing-m);
+    z-index: 2;
+  }
+
+  .carousel-indicator {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid currentColor;
+    background-color: transparent;
+    cursor: pointer;
+    transition: all 0.2s ease-in-out;
+    padding: 0;
+
+    &:hover {
+      transform: scale(1.2);
+    }
+
+    &.is-active {
+      background-color: currentColor;
+    }
+
+    &:focus-visible {
+      outline: 2px solid currentColor;
+      outline-offset: 2px;
+    }
+  }
+
+  /* Hide navigation on single slide */
+  &:has(.carousel-slide:only-child) {
+    .carousel-nav,
+    .carousel-indicators {
+      display: none;
+    }
+  }
+
+  /* Quiet variant - minimal styling */
+  &.quiet {
+    .carousel-button {
+      background-color: rgba(0 0 0 / 5%);
+      border: none;
+    }
+
+    .carousel-indicator {
+      border-color: rgba(0 0 0 / 30%);
+
+      &.is-active {
+        background-color: rgba(0 0 0 / 30%);
+      }
+    }
+  }
+
+  /* Dark variant */
+  &.dark {
+    .carousel-button {
+      background-color: rgba(0 0 0 / 80%);
+      border-color: rgba(255 255 255 / 10%);
+      color: var(--color-light);
+    }
+
+    .carousel-indicator {
+      border-color: rgba(255 255 255 / 50%);
+
+      &.is-active {
+        background-color: rgba(255 255 255 / 50%);
+      }
+    }
+  }
+}
+
+/* Responsive adjustments */
+@media (width < 768px) {
+  .carousel {
+    .carousel-button {
+      width: 40px;
+      height: 40px;
+    }
+
+    .carousel-nav {
+      padding: 0 var(--spacing-m);
+    }
+  }
+}
+
