@@ -79,11 +79,51 @@ function decorateScheme(btn) {
   });
 }
 
+function toggleBodyScroll(lock) {
+  if (lock) {
+    document.body.style.overflow = 'hidden';
+  } else {
+    document.body.style.overflow = '';
+  }
+}
+
+function closeMobileNav() {
+  const header = document.body.querySelector('header');
+  if (header) {
+    header.classList.remove('is-mobile-open');
+    toggleBodyScroll(false);
+    const toggleBtn = header.querySelector('.action-wrapper.mobile-nav-toggle button, .mobile-nav-toggle-btn');
+    if (toggleBtn) toggleBtn.setAttribute('aria-expanded', 'false');
+  }
+}
+
 function decorateNavToggle(btn) {
-  btn.addEventListener('click', () => {
+  if (!btn) return;
+  
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
     const header = document.body.querySelector('header');
-    if (header) header.classList.toggle('is-mobile-open');
+    if (header) {
+      const isOpen = header.classList.contains('is-mobile-open');
+      header.classList.toggle('is-mobile-open');
+      toggleBodyScroll(!isOpen);
+      btn.setAttribute('aria-expanded', (!isOpen).toString());
+    }
   });
+  
+  // Close mobile nav when clicking outside (only add once)
+  if (!document.hasMobileNavCloseListener) {
+    document.addEventListener('click', (e) => {
+      const header = document.body.querySelector('header');
+      if (header && header.classList.contains('is-mobile-open')) {
+        if (!header.contains(e.target) && !e.target.closest('header')) {
+          closeMobileNav();
+        }
+      }
+    });
+    document.hasMobileNavCloseListener = true;
+  }
 }
 
 async function decorateAction(header, pattern) {
@@ -146,6 +186,48 @@ function decorateBrandSection(section) {
   span.className = 'brand-text';
   span.append(text);
   brandLink.append(span);
+  
+  // Create mobile nav toggle button in brand section
+  const defaultContent = section.querySelector('.default-content');
+  if (defaultContent && !defaultContent.querySelector('.action-wrapper.mobile-nav-toggle')) {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'action-wrapper mobile-nav-toggle';
+    const btn = document.createElement('button');
+    btn.setAttribute('aria-label', 'Toggle navigation');
+    btn.setAttribute('aria-expanded', 'false');
+    btn.classList.add('mobile-nav-toggle-btn');
+    // Create hamburger icon
+    const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    icon.setAttribute('width', '24');
+    icon.setAttribute('height', '24');
+    icon.setAttribute('viewBox', '0 0 24 24');
+    icon.setAttribute('fill', 'none');
+    icon.setAttribute('stroke', 'currentColor');
+    icon.setAttribute('stroke-width', '2');
+    icon.setAttribute('stroke-linecap', 'round');
+    icon.setAttribute('stroke-linejoin', 'round');
+    icon.classList.add('icon', 'icon-menu');
+    const line1 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line1.setAttribute('x1', '3');
+    line1.setAttribute('y1', '6');
+    line1.setAttribute('x2', '21');
+    line1.setAttribute('y2', '6');
+    const line2 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line2.setAttribute('x1', '3');
+    line2.setAttribute('y1', '12');
+    line2.setAttribute('x2', '21');
+    line2.setAttribute('y2', '12');
+    const line3 = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+    line3.setAttribute('x1', '3');
+    line3.setAttribute('y1', '18');
+    line3.setAttribute('x2', '21');
+    line3.setAttribute('y2', '18');
+    icon.append(line1, line2, line3);
+    btn.append(icon);
+    wrapper.append(btn);
+    defaultContent.append(wrapper);
+    decorateNavToggle(btn);
+  }
 }
 
 function decorateNavSection(section) {

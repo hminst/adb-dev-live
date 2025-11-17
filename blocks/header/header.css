@@ -1,6 +1,7 @@
 header {
   --logo-width: 40px;
   --logo-height: 40px;
+  --logo-min-size: 44px;
   --mega-columns: 4;
 
   display: block;
@@ -53,6 +54,8 @@ header {
       padding: 0;
       background-color: transparent;
       height: 100%;
+      min-width: 44px;
+      min-height: 44px;
       width: 64px;
 
       .icon {
@@ -126,6 +129,7 @@ header {
       height: var(--header-height);
       display: flex;
       justify-content: space-between;
+      align-items: center;
 
       p,
       a {
@@ -137,6 +141,9 @@ header {
         text-decoration: none;
         margin: 0;
         color: var(--color-brand);
+        min-width: var(--logo-min-size);
+        min-height: var(--logo-min-size);
+        padding: calc((var(--logo-min-size) - var(--logo-height)) / 2);
 
         img {
           height: var(--logo-height);
@@ -158,6 +165,40 @@ header {
 
     .action-wrapper {
       right: -23px; /* 64 minus waffle icon inset */
+    }
+    
+    .action-wrapper.mobile-nav-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      right: 0;
+      height: var(--header-height);
+      
+      button {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 44px;
+        height: 44px;
+        min-width: 44px;
+        min-height: 44px;
+        padding: 0;
+        background-color: transparent;
+        border: none;
+        cursor: pointer;
+        color: var(--color-text);
+        
+        svg {
+          width: 24px;
+          height: 24px;
+          display: block;
+        }
+      }
+      
+      @media (width >= 900px) {
+        display: none;
+      }
     }
   }
 
@@ -213,6 +254,8 @@ header {
     .main-nav-link {
       display: block;
       line-height: 64px;
+      min-height: 44px;
+      padding: var(--spacing-xs) 0;
     }
 
     .menu,
@@ -311,6 +354,14 @@ header {
       .main-nav-list {
         display: flex;
         gap: var(--spacing-l);
+        align-items: center;
+      }
+      
+      .main-nav-link {
+        min-height: 44px;
+        display: flex;
+        align-items: center;
+        padding: 0 var(--spacing-xs);
       }
 
       .main-nav-item {
@@ -341,6 +392,11 @@ header {
       .action-wrapper {
         position: relative;
         right: -10px;
+        margin-left: var(--spacing-s);
+        
+        + .action-wrapper {
+          margin-left: var(--spacing-xs);
+        }
       }
 
       .block-content {
