@@ -184,20 +184,26 @@
     right: 0;
     display: flex;
     justify-content: center;
-    gap: var(--spacing-xs);
+    gap: var(--spacing-s);
     padding: var(--spacing-m);
     z-index: 2;
   }
 
   .carousel-indicator {
-    width: 12px;
-    height: 12px;
+    min-width: 44px;
+    min-height: 44px;
+    width: 8px;
+    height: 8px;
     border-radius: 50%;
     border: 2px solid currentColor;
     background-color: transparent;
     cursor: pointer;
     transition: all 0.2s ease-in-out;
-    padding: 0;
+    padding: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
 
     &:hover {
       transform: scale(1.2);
@@ -259,8 +265,10 @@
 @media (width < 768px) {
   .carousel {
     .carousel-button {
-      width: 40px;
-      height: 40px;
+      min-width: 44px;
+      min-height: 44px;
+      width: 44px;
+      height: 44px;
     }
 
     .carousel-nav {

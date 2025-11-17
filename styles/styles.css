@@ -239,6 +239,8 @@ a {
     border: 2px solid;
     padding: 8px 12px;
     box-sizing: border-box;
+    min-height: 44px;
+    min-width: 44px;
 
     &.btn-outline {
       background: transparent;

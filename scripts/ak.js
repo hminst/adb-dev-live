@@ -87,6 +87,22 @@ function decoratePictures(el) {
     clone.setAttribute('srcset', `${pathname}?${search.toString()}`);
     clone.setAttribute('media', '(min-width: 1440px)');
     pic.prepend(clone);
+    
+    // Ensure img has alt attribute for accessibility
+    const img = pic.querySelector('img');
+    if (img && !img.hasAttribute('alt')) {
+      // If no alt text is provided, set empty string for decorative images
+      // Content authors should add descriptive alt text in the source HTML
+      img.setAttribute('alt', '');
+    }
+  }
+  
+  // Also check standalone img elements
+  const standaloneImgs = el.querySelectorAll('img:not(picture img)');
+  for (const img of standaloneImgs) {
+    if (!img.hasAttribute('alt')) {
+      img.setAttribute('alt', '');
+    }
   }
 }
 

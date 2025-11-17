@@ -94,6 +94,14 @@ function setupCarousel(el) {
         imageContainer.append(pictureElement);
       }
       
+      // Ensure images have alt text for accessibility
+      const img = imageContainer.querySelector('img');
+      if (img && !img.hasAttribute('alt')) {
+        // Try to extract alt from nearby text or use empty string for decorative
+        const slideText = textElements.map(el => el.textContent?.trim()).join(' ').substring(0, 100);
+        img.setAttribute('alt', slideText || '');
+      }
+      
       // Create text container
       const textContainer = document.createElement('div');
       textContainer.className = 'carousel-slide-text';

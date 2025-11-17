@@ -1,6 +1,11 @@
 footer {
   a {
     text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    min-width: 44px;
+    padding: var(--spacing-xs) 0;
   }
 
   .footer-content {
@@ -41,10 +46,15 @@ footer {
         display: flex;
         justify-content: end;
         gap: var(--spacing-xl);
+        align-items: center;
       }
 
       li {
         margin: 0;
+      }
+      
+      a {
+        padding: var(--spacing-xs) var(--spacing-s);
       }
     }
 
