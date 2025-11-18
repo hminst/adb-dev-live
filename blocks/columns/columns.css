@@ -1,8 +1,5 @@
 .columns {
-  --columns-gap: 0;
-
   display: grid;
-  gap: var(--columns-gap);
 
   img {
     display: block;
@@ -11,7 +8,6 @@
   .row {
     display: grid;
     align-items: center;
-    gap: var(--columns-gap);
   }
 
   .col {
@@ -22,30 +18,6 @@
     :last-child {
       margin-bottom: 0;
     }
-  }
-
-  &.gap-xs {
-    --columns-gap: var(--spacing-xs);
-  }
-
-  &.gap-s {
-    --columns-gap: var(--spacing-s);
-  }
-
-  &.gap-m {
-    --columns-gap: var(--spacing-m);
-  }
-
-  &.gap-l {
-    --columns-gap: var(--spacing-l);
-  }
-
-  &.gap-xl {
-    --columns-gap: var(--spacing-xl);
-  }
-
-  &.gap-xxl {
-    --columns-gap: var(--spacing-xxl);
   }
 
   &.image-cover {

@@ -3,8 +3,8 @@ footer {
     text-decoration: none;
     display: inline-flex;
     align-items: center;
-    min-height: 44px;
-    min-width: 44px;
+    min-height: var(--touch-target-min);
+    min-width: var(--touch-target-min);
     padding: var(--spacing-xs) 0;
   }
 

@@ -1,7 +1,7 @@
 header {
   --logo-width: 40px;
   --logo-height: 40px;
-  --logo-min-size: 44px;
+  --logo-min-size: var(--touch-target-min);
   --mega-columns: 4;
 
   display: block;
@@ -9,7 +9,7 @@ header {
   top: 0;
   left: 0;
   right: 0;
-  z-index: 1000;
+  z-index: var(--z-header);
   overflow: hidden;
   max-height: var(--header-height);
   background-color: light-dark(var(--color-light), var(--color-dark));
@@ -54,8 +54,8 @@ header {
       padding: 0;
       background-color: transparent;
       height: 100%;
-      min-width: 44px;
-      min-height: 44px;
+      min-width: var(--touch-target-min);
+      min-height: var(--touch-target-min);
       width: 64px;
 
       .icon {
@@ -179,10 +179,10 @@ header {
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 44px;
-        height: 44px;
-        min-width: 44px;
-        min-height: 44px;
+        width: var(--touch-target-min);
+        height: var(--touch-target-min);
+        min-width: var(--touch-target-min);
+        min-height: var(--touch-target-min);
         padding: 0;
         background-color: transparent;
         border: none;
@@ -206,7 +206,7 @@ header {
     grid-area: actions;
     max-height: 64px;
     overflow: hidden;
-    transition: all 0.2s ease-in-out;
+    transition: all var(--transition-fast);
 
     > .default-content {
       display: flex;
@@ -223,7 +223,7 @@ header {
       right: -13px;
 
       button {
-        width: 44px;
+        width: var(--touch-target-min);
       }
     }
 
@@ -254,7 +254,7 @@ header {
     .main-nav-link {
       display: block;
       line-height: 64px;
-      min-height: 44px;
+      min-height: var(--touch-target-min);
       padding: var(--spacing-xs) 0;
     }
 
@@ -320,7 +320,7 @@ header {
         position: absolute;
         left: auto;
         right: 0;
-        z-index: 1001;
+        z-index: var(--z-header-dropdown);
       }
     }
 
@@ -358,7 +358,7 @@ header {
       }
       
       .main-nav-link {
-        min-height: 44px;
+        min-height: var(--touch-target-min);
         display: flex;
         align-items: center;
         padding: 0 var(--spacing-xs);

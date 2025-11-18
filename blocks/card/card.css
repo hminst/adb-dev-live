@@ -1,11 +1,11 @@
 .card {
   --spacing-default: var(--spacing-l);
 
-  box-shadow: 0 1px 6px 0 rgba(0 0 0 / 12%);
+  box-shadow: var(--shadow-md);
   overflow: hidden;
   background-color: light-dark(var(--color-gray-100), var(--color-gray-900));
   color: light-dark(var(--color-dark), var(--color-light));
-  transition: all 0.25s ease-in-out;
+  transition: all var(--transition-normal);
 
   .card-inner {
     display: grid;
@@ -22,7 +22,7 @@
         position: absolute;
         inset: 0;
         opacity: 0.85;
-        transition: opacity 0.25s ease-in-out;
+        transition: opacity var(--transition-normal);
       }
 
       img {
@@ -58,8 +58,9 @@
   }
 
   &:not(.quiet):hover {
+    will-change: transform, box-shadow;
     transform: scale(1.005);
-    box-shadow: 0 2px 8px 0 rgba(0 0 0 / 16%);
+    box-shadow: var(--shadow-lg);
 
     picture {
       opacity: 1;

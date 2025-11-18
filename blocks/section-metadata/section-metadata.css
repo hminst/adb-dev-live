@@ -29,30 +29,6 @@
     --grid-size: 6;
   }
 
-  &.gap-xs {
-    --gap-spacing: var(--spacing-xs);
-  }
-
-  &.gap-s {
-    --gap-spacing: var(--spacing-s);
-  }
-
-  &.gap-m {
-    --gap-spacing: var(--spacing-m);
-  }
-
-  &.gap-l {
-    --gap-spacing: var(--spacing-l);
-  }
-
-  &.gap-xl {
-    --gap-spacing: var(--spacing-xl);
-  }
-
-  &.gap-xxl {
-    --gap-spacing: var(--spacing-xxl);
-  }
-
   &.spacing-xs {
     --top-bottom-spacing: calc(var(--spacing-xs) * 2);
   }
@@ -79,7 +55,31 @@
 
   &.grid .block-content {
     display: grid;
-    gap: var(--gap-spacing);
+  }
+
+  /* Gap utilities - using global utilities from styles.css */
+  &.gap-xs .block-content {
+    gap: var(--spacing-xs);
+  }
+
+  &.gap-s .block-content {
+    gap: var(--spacing-s);
+  }
+
+  &.gap-m .block-content {
+    gap: var(--spacing-m);
+  }
+
+  &.gap-l .block-content {
+    gap: var(--spacing-l);
+  }
+
+  &.gap-xl .block-content {
+    gap: var(--spacing-xl);
+  }
+
+  &.gap-xxl .block-content {
+    gap: var(--spacing-xxl);
   }
 
   &.center {
@@ -125,7 +125,7 @@
     display: block;
     position: absolute;
     inset: 0;
-    z-index: 0;
+    z-index: var(--z-base);
   }
 
   .section-background img {
