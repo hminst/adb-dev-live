@@ -3,6 +3,7 @@
   overflow: hidden;
   background-color: light-dark(var(--color-gray-100), var(--color-gray-900));
   height: 400px;
+  margin-bottom: 60px;
 
   .carousel-slides {
     display: flex;

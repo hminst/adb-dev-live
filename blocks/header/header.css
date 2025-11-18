@@ -362,6 +362,14 @@ header {
         display: flex;
         align-items: center;
         padding: 0 var(--spacing-xs);
+        
+        /* Adjust button styles for seamless header integration */
+        &.btn {
+          padding: 6px 12px;
+          min-height: auto;
+          line-height: 1.2;
+          border-width: 2px;
+        }
       }
 
       .main-nav-item {
