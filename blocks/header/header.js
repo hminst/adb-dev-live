@@ -172,10 +172,17 @@ function decorateNavItem(li) {
   if (link) link.classList.add('main-nav-link');
   const menu = decorateMegaMenu(li) || decorateMenu(li);
   if (!(menu || link)) return;
-  link.addEventListener('click', (e) => {
-    e.preventDefault();
-    toggleMenu(li);
-  });
+  
+  // Only prevent default and toggle menu if there's actually a menu
+  if (menu) {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      toggleMenu(li);
+    });
+  } else {
+    // Style as button if there's no submenu
+    link.classList.add('btn', 'btn-accent');
+  }
 }
 
 function decorateBrandSection(section) {
