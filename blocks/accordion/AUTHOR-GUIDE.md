@@ -47,8 +47,8 @@ Use this when you want only one item open at a time. Opening a new item automati
 
 Adds visible borders around each item for better visual separation.
 
-| Accordion (Bordered) |
-|---|---|
+| Accordion (Bordered) | |
+|----------------------|-----------|
 | **Feature One** | Description of feature one. |
 | **Feature Two** | Description of feature two. |
 
