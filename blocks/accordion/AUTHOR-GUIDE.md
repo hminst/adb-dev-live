@@ -13,8 +13,8 @@ Create a table with the block name "Accordion" and two columns:
 
 ### Basic Example
 
-| Accordion |
-|---|---|
+| Accordion | |
+|-----------|-----------|
 | **What is Edge Delivery Services?** | Edge Delivery Services is Adobe's modern web platform that delivers lightning-fast websites. Built on a unique architecture that combines the flexibility of modern development with the power of Adobe Experience Manager. |
 | **How does the authoring process work?** | Content is authored in familiar tools like Google Docs, Microsoft Word, or SharePoint. Authors work in the tools they already know, while the platform automatically transforms content into high-performance web pages. |
 | **Why choose Edge Delivery?** | Edge Delivery provides unmatched performance with consistent 100 PageSpeed scores, instant publishing, and real-time previews. |
@@ -27,8 +27,8 @@ Create a table with the block name "Accordion" and two columns:
 
 Use this when you want multiple items to stay open at the same time.
 
-| Accordion |
-|---|---|
+| Accordion | |
+|-----------|-----------|
 | **First Question** | Answer to the first question goes here. |
 | **Second Question** | Answer to the second question goes here. |
 | **Third Question** | Answer to the third question goes here. |
@@ -37,8 +37,8 @@ Use this when you want multiple items to stay open at the same time.
 
 Use this when you want only one item open at a time. Opening a new item automatically closes the previous one.
 
-| Accordion (Single-Open) |
-|---|---|
+| Accordion (Single-Open) | |
+|-------------------------|-----------|
 | **Step 1: Setup** | Complete the initial setup process. |
 | **Step 2: Configuration** | Configure your settings. |
 | **Step 3: Launch** | Launch your project. |
@@ -56,8 +56,8 @@ Adds visible borders around each item for better visual separation.
 
 Clean style with minimal visual elements.
 
-| Accordion (Minimal) |
-|---|---|
+| Accordion (Minimal) | |
+|---------------------|-----------|
 | **Topic One** | Information about topic one. |
 | **Topic Two** | Information about topic two. |
 
@@ -92,8 +92,8 @@ You can include:
 
 **Example with rich content:**
 
-| Accordion |
-|---|---|
+| Accordion | |
+|-----------|-----------|
 | **Getting Started** | Follow these steps to begin: 1. Create your account 2. Verify your email 3. Complete your profile. Visit our [help center](https://example.com/help) for more information. |
 
 ---
@@ -123,32 +123,32 @@ You can include:
 
 ### Frequently Asked Questions
 
-| Accordion |
-|---|---|
+| Accordion | |
+|-----------|-----------|
 | **How do I reset my password?** | Visit the login page and click "Forgot Password". You'll receive an email with reset instructions. |
 | **What payment methods do you accept?** | We accept all major credit cards, PayPal, and bank transfers. |
 | **How long does shipping take?** | Standard shipping takes 5-7 business days. Express shipping is available for 2-3 day delivery. |
 
 ### Product Features
 
-| Accordion (Single-Open) |
-|---|---|
+| Accordion (Single-Open) | |
+|-------------------------|-----------|
 | **Performance** | Lightning-fast load times with 100 PageSpeed scores. Built for speed from the ground up. |
 | **Scalability** | Handles millions of page views effortlessly. Grows with your business. |
 | **Security** | Enterprise-grade security with regular audits and updates. |
 
 ### Step-by-Step Instructions
 
-| Accordion (Single-Open) |
-|---|---|
+| Accordion (Single-Open) | |
+|-------------------------|-----------|
 | **Step 1: Create Account** | Navigate to the sign-up page and enter your details. Choose a strong password. |
 | **Step 2: Verify Email** | Check your inbox for the verification email. Click the link to verify. |
 | **Step 3: Complete Profile** | Fill in your profile information to get started. Add a profile picture. |
 
 ### Documentation Sections
 
-| Accordion |
-|---|---|
+| Accordion | |
+|-----------|-----------|
 | **Getting Started** | Follow this guide to set up your first project and understand the basics. |
 | **Configuration** | Learn about all available configuration settings and customization options. |
 | **Advanced Topics** | Explore advanced features including integrations and custom development. |
