@@ -78,6 +78,18 @@ async function translateText(text, targetLang) {
   }
 }
 
+// Helper function to check if a node or any of its ancestors has a specific class
+function hasAncestorWithClass(node, className) {
+  let current = node.parentElement;
+  while (current) {
+    if (current.classList && current.classList.contains(className)) {
+      return true;
+    }
+    current = current.parentElement;
+  }
+  return false;
+}
+
 // Translate HTML content
 async function translateHTML(html, targetLang) {
   try {
@@ -91,14 +103,22 @@ async function translateHTML(html, targetLang) {
       NodeFilter.SHOW_TEXT,
       {
         acceptNode: (node) => {
-          // Skip empty text nodes and those in script/style tags
+          // Skip empty text nodes
           if (!node.textContent.trim()) return NodeFilter.FILTER_REJECT;
-          // Skip section metadata, as this is technical content that should not be translated
-          if (node.classList?.contains('section-metadata')) return NodeFilter.FILTER_REJECT;
+          
           const parent = node.parentElement;
-          if (parent && (parent.tagName === 'SCRIPT' || parent.tagName === 'STYLE')) {
+          if (!parent) return NodeFilter.FILTER_REJECT;
+          
+          // Skip nodes in script/style tags
+          if (parent.tagName === 'SCRIPT' || parent.tagName === 'STYLE') {
             return NodeFilter.FILTER_REJECT;
           }
+          
+          // Skip section metadata and all its children
+          if (hasAncestorWithClass(node, 'section-metadata')) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          
           return NodeFilter.FILTER_ACCEPT;
         }
       }
@@ -127,9 +147,12 @@ async function translateHTML(html, targetLang) {
       }
     }
     
-    // Also translate alt attributes in images
+    // Also translate alt attributes in images (skip if in section-metadata)
     const images = doc.querySelectorAll('img[alt]');
     for (const img of images) {
+      if (hasAncestorWithClass(img, 'section-metadata') || img.classList.contains('section-metadata')) {
+        continue;
+      }
       const alt = img.getAttribute('alt');
       if (alt && alt.trim()) {
         const translatedAlt = await translateText(alt, targetLang);
@@ -137,9 +160,12 @@ async function translateHTML(html, targetLang) {
       }
     }
     
-    // Also translate title attributes
+    // Also translate title attributes (skip if in section-metadata)
     const elementsWithTitle = doc.querySelectorAll('[title]');
     for (const element of elementsWithTitle) {
+      if (hasAncestorWithClass(element, 'section-metadata') || element.classList.contains('section-metadata')) {
+        continue;
+      }
       const title = element.getAttribute('title');
       if (title && title.trim()) {
         const translatedTitle = await translateText(title, targetLang);
