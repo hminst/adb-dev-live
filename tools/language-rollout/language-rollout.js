@@ -81,8 +81,10 @@ let progressState = {
   total: 0,
   completed: 0,
   failed: 0,
-  pushed: 0,
-  pushFailed: 0,
+  pushedPreview: 0,
+  pushedLive: 0,
+  pushFailedPreview: 0,
+  pushFailedLive: 0,
 };
 
 function updateProgress(message) {
@@ -121,7 +123,7 @@ function hideProgress() {
     submitButton.disabled = false;
     submitButton.textContent = 'Rollout';
   }
-  progressState = { total: 0, completed: 0, failed: 0, pushed: 0, pushFailed: 0 };
+  progressState = { total: 0, completed: 0, failed: 0, pushedPreview: 0, pushedLive: 0, pushFailedPreview: 0, pushFailedLive: 0 };
 }
 
 // Show results
@@ -248,8 +250,10 @@ async function copyPageTree(sourcePath, targetLanguage, token, basePath, pushOpt
   progressState.total = selectedCheckboxes.length;
   progressState.completed = 0;
   progressState.failed = 0;
-  progressState.pushed = 0;
-  progressState.pushFailed = 0;
+  progressState.pushedPreview = 0;
+  progressState.pushedLive = 0;
+  progressState.pushFailedPreview = 0;
+  progressState.pushFailedLive = 0;
   
   const results = [];
   
@@ -291,20 +295,20 @@ async function copyPageTree(sourcePath, targetLanguage, token, basePath, pushOpt
             if (preview && pushResults.preview) {
               console.log('Preview result:', pushResults.preview);
               if (pushResults.preview.success) {
-                progressState.pushed++;
-                console.log('Preview push succeeded, pushed count:', progressState.pushed);
+                progressState.pushedPreview++;
+                console.log('Preview push succeeded, count:', progressState.pushedPreview);
               } else {
-                progressState.pushFailed++;
+                progressState.pushFailedPreview++;
                 pushSuccess = false;
               }
             }
             if (live && pushResults.live) {
               console.log('Live result:', pushResults.live);
               if (pushResults.live.success) {
-                progressState.pushed++;
-                console.log('Live push succeeded, pushed count:', progressState.pushed);
+                progressState.pushedLive++;
+                console.log('Live push succeeded, count:', progressState.pushedLive);
               } else {
-                progressState.pushFailed++;
+                progressState.pushFailedLive++;
                 pushSuccess = false;
               }
             }
@@ -334,8 +338,10 @@ async function copyPageTree(sourcePath, targetLanguage, token, basePath, pushOpt
     }
     
     // Capture push counts before hiding progress (which resets progressState)
-    const pushedCount = progressState.pushed;
-    const pushFailedCount = progressState.pushFailed;
+    const pushedPreviewCount = progressState.pushedPreview;
+    const pushedLiveCount = progressState.pushedLive;
+    const pushFailedPreviewCount = progressState.pushFailedPreview;
+    const pushFailedLiveCount = progressState.pushFailedLive;
     
     hideProgress();
     
@@ -343,16 +349,20 @@ async function copyPageTree(sourcePath, targetLanguage, token, basePath, pushOpt
     const failed = results.filter(r => r.status === 'failed' || r.status === 'error');
     const pushFailed = results.filter(r => r.status === 'success-push-failed');
     
-    console.log('Final pushed count:', pushedCount);
-    console.log('Final pushFailed count:', pushFailedCount);
+    console.log('Final pushed preview:', pushedPreviewCount);
+    console.log('Final pushed live:', pushedLiveCount);
+    console.log('Final push failed preview:', pushFailedPreviewCount);
+    console.log('Final push failed live:', pushFailedLiveCount);
     
     return {
       success: failed.length === 0,
       total: results.length,
       successful: successful.length,
       failed: failed.length,
-      pushed: pushedCount,
-      pushFailed: pushFailed.length,
+      pushedPreview: pushedPreviewCount,
+      pushedLive: pushedLiveCount,
+      pushFailedPreview: pushFailedPreviewCount,
+      pushFailedLive: pushFailedLiveCount,
       details: results,
       hadPushOption: shouldPush,
     };
@@ -774,19 +784,28 @@ function handleRollout(event, token, basePath) {
           : `Copied ${result.successful} page${result.successful !== 1 ? 's' : ''}, but ${result.failed} failed.`;
         
         if (result.hadPushOption) {
-          const pushCount = (pushPreview ? 1 : 0) + (pushLive ? 1 : 0);
-          const expectedPushes = result.successful * pushCount;
-          const pushedCount = result.pushed || 0;
-          const pushFailedCount = result.pushFailed || 0;
+          const pushedPreviewCount = result.pushedPreview || 0;
+          const pushedLiveCount = result.pushedLive || 0;
+          const pushFailedPreviewCount = result.pushFailedPreview || 0;
+          const pushFailedLiveCount = result.pushFailedLive || 0;
           
-          const pushTargets = [];
-          if (pushPreview) pushTargets.push('preview');
-          if (pushLive) pushTargets.push('live');
+          const pushSummary = [];
+          if (pushPreview) {
+            const previewTotal = result.successful;
+            pushSummary.push(`${pushedPreviewCount}/${previewTotal} to preview`);
+          }
+          if (pushLive) {
+            const liveTotal = result.successful;
+            pushSummary.push(`${pushedLiveCount}/${liveTotal} to live`);
+          }
           
-          summary += ` Pushed ${pushedCount}/${expectedPushes} to ${pushTargets.join(' and ')}.`;
+          if (pushSummary.length > 0) {
+            summary += ` Pushed ${pushSummary.join(' and ')}.`;
+          }
           
-          if (pushFailedCount > 0) {
-            summary += ` ${pushFailedCount} push operation${pushFailedCount !== 1 ? 's' : ''} failed.`;
+          const totalPushFailed = pushFailedPreviewCount + pushFailedLiveCount;
+          if (totalPushFailed > 0) {
+            summary += ` ${totalPushFailed} push operation${totalPushFailed !== 1 ? 's' : ''} failed.`;
           }
         }
         
@@ -797,11 +816,22 @@ function handleRollout(event, token, basePath) {
         ];
         
         if (result.hadPushOption) {
-          const pushedCount = result.pushed || 0;
-          const pushFailedCount = result.pushFailed || 0;
-          stats.push({ label: 'Pushed Successfully', value: pushedCount });
-          if (pushFailedCount > 0) {
-            stats.push({ label: 'Push Failed', value: pushFailedCount });
+          const pushedPreviewCount = result.pushedPreview || 0;
+          const pushedLiveCount = result.pushedLive || 0;
+          const pushFailedPreviewCount = result.pushFailedPreview || 0;
+          const pushFailedLiveCount = result.pushFailedLive || 0;
+          
+          if (pushPreview) {
+            stats.push({ label: 'Pushed to Preview', value: pushedPreviewCount });
+            if (pushFailedPreviewCount > 0) {
+              stats.push({ label: 'Preview Push Failed', value: pushFailedPreviewCount });
+            }
+          }
+          if (pushLive) {
+            stats.push({ label: 'Pushed to Live', value: pushedLiveCount });
+            if (pushFailedLiveCount > 0) {
+              stats.push({ label: 'Live Push Failed', value: pushFailedLiveCount });
+            }
           }
         }
         
