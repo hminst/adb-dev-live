@@ -37,7 +37,13 @@
             Translate content to target language
           </label>
         </div>
-        <div class="help-text" style="margin-top: -0.5rem; margin-bottom: 1rem;">Uses LibreTranslate (open-source machine translation) to translate page content</div>
+        <div class="help-text" style="margin-top: -0.5rem; margin-bottom: 1rem;">Uses DeepL for high-quality machine translation</div>
+        
+        <div id="deepl-api-key-section" style="display: none; margin-top: 0.5rem;">
+          <label for="deepl-api-key">DeepL API Key</label>
+          <input type="password" id="deepl-api-key" name="deepl-api-key" placeholder="Enter your DeepL API key">
+          <div class="help-text">Get a free API key at <a href="https://www.deepl.com/pro-api" target="_blank">deepl.com/pro-api</a></div>
+        </div>
         
         <div class="form-section">
           <label class="section-label">After copying:</label>
