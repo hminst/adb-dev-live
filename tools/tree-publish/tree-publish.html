@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Tree Preview & Publish</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/tools/tree-publish/tree-publish.css">
+    <script type="importmap">
+      { "imports": { "da-lit": "/deps/lit/dist/index.js" } }
+    </script>
+    <!-- Import DA App SDK -->
+    <script src="https://da.live/nx/utils/sdk.js" type="module"></script>
+    <!-- Project App Logic -->
+    <script src="/tools/tree-publish/tree-publish.js" type="module"></script>
+  </head>
+  <body>
+    <h1>Tree Preview & Publish</h1>
+    <p class="description">Preview and/or publish an entire page tree to your AEM site.</p>
+    
+    <form id="publish-form">
+        <label for="source-path">Source Path</label>
+        <input type="text" id="source-path" name="source-path" placeholder="/path/to/directory">
+        <div class="help-text">Enter a directory path to scan all HTML pages within it</div>
+        
+        <div class="form-section">
+          <label class="section-label">Actions:</label>
+          <div class="checkbox-wrapper">
+            <label>
+              <input type="checkbox" id="push-preview" name="push-preview">
+              Push to preview
+            </label>
+          </div>
+          <div class="checkbox-wrapper">
+            <label>
+              <input type="checkbox" id="push-live" name="push-live">
+              Push to live (publish)
+            </label>
+          </div>
+        </div>
+        
+        <button type="button" id="scan-button">Scan Directory</button>
+        
+        <div id="tree-preview" style="display: none;">
+          <div id="tree-preview-header">
+            <strong>Pages found:</strong>
+            <div class="preview-actions">
+              <button type="button" id="select-all">☑️ Select All</button>
+              <button type="button" id="deselect-all">☐ Deselect All</button>
+              <button type="button" id="refresh-scan">🔄 Refresh</button>
+            </div>
+          </div>
+          <div id="tree-preview-loading" style="display: none;">
+            <div class="loading-spinner"></div>
+            <span>Scanning directory...</span>
+          </div>
+          <div id="tree-preview-list"></div>
+          <div id="selection-summary" style="display: none;">
+            <strong id="selection-count">0 pages selected</strong>
+          </div>
+        </div>
+        
+        <div id="progress-section" style="display: none;">
+          <div id="progress-bar-container">
+            <div id="progress-bar"></div>
+          </div>
+          <div id="progress-text">Processing...</div>
+        </div>
+        
+        <div id="results-section" style="display: none;">
+          <div id="results-content"></div>
+        </div>
+        
+        <button type="submit" style="display: none;">Publish</button>
+    </form>
+  </body>
+</html>
+
