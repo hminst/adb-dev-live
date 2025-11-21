@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Language Rollout</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1"/>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/tools/language-rollout/language-rollout.css">
+    <script type="importmap">
+      { "imports": { "da-lit": "/deps/lit/dist/index.js" } }
+    </script>
+    <!-- Import DA App SDK -->
+    <script src="https://da.live/nx/utils/sdk.js" type="module"></script>
+    <!-- Project App Logic -->
+    <script src="/tools/language-rollout/language-rollout.js" type="module"></script>
+  </head>
+  <body>
+    <h1>Language Rollout</h1>
+    <form id="rollout-form">
+        <label for="rollout-source">Source</label>
+        <input type="text" id="rollout-source" name="rollout-source" placeholder="/index.html">
+        
+        <label for="rollout-language">Target Language</label>
+        <select id="rollout-language" name="rollout-language">
+          <option value="">Select a language...</option>
+        </select>
+        
+        <div class="checkbox-wrapper">
+          <label>
+            <input type="checkbox" id="rollout-tree" name="rollout-tree">
+            Copy entire page tree (all child pages)
+          </label>
+        </div>
+        
+        <div id="destination-preview" style="margin-top: 1rem; padding: 1rem; background: #e8f4f8; border-radius: 4px; display: none;">
+          <strong>Destination:</strong> <code id="destination-path"></code>
+        </div>
+        
+        <div id="tree-preview" style="display: none;">
+          <div id="tree-preview-header">
+            <strong>Pages to be copied:</strong>
+            <div class="preview-actions">
+              <button type="button" id="select-all">☑️ Select All</button>
+              <button type="button" id="deselect-all">☐ Deselect All</button>
+              <button type="button" id="refresh-preview">🔄 Refresh</button>
+            </div>
+          </div>
+          <div id="tree-preview-loading" style="display: none;">
+            <div class="loading-spinner"></div>
+            <span>Scanning directory...</span>
+          </div>
+          <div id="tree-preview-list"></div>
+        </div>
+        
+        <div id="progress-section" style="display: none;">
+          <div id="progress-bar-container">
+            <div id="progress-bar"></div>
+          </div>
+          <div id="progress-text">Processing...</div>
+        </div>
+        
+        <div id="results-section" style="display: none;">
+          <div id="results-content"></div>
+        </div>
+        
+        <button data-action="rollout" type="submit">Rollout</button>
+    </form>
+  </body>
+</html>
