@@ -35,81 +35,51 @@ async function checkPageExists(path, token) {
   }
 }
 
-// Map language codes to DeepL format (uppercase, with special cases)
-function mapToDeepLCode(langCode) {
-  const mapping = {
-    'en': 'EN',
-    'de': 'DE',
-    'fr': 'FR',
-    'es': 'ES',
-    'it': 'IT',
-    'pt': 'PT-PT',
-    'nl': 'NL',
-    'ja': 'JA',
-    'zh': 'ZH',
-    'ko': 'KO',
-    'ar': 'AR',
-    'ru': 'RU',
-    'pl': 'PL',
-    'sv': 'SV',
-    'da': 'DA',
-    'no': 'NB', // DeepL uses NB for Norwegian Bokmål
-    'fi': 'FI',
-  };
-  return mapping[langCode] || langCode.toUpperCase();
-}
-
-// Translate text using DeepL API
-async function translateText(text, targetLang, apiKey) {
+// Translate text using local DeepL proxy
+async function translateText(text, targetLang) {
   if (!text || !text.trim()) return text;
-  if (!apiKey) {
-    console.warn('DeepL API key not provided, skipping translation');
-    return text;
-  }
   
   try {
-    const sourceLang = 'EN'; // Assume source is English
-    const targetDeepLCode = mapToDeepLCode(targetLang);
+    const sourceLang = 'en'; // Assume source is English
     
-    // Use free API endpoint (works for both free and pro keys)
-    const url = 'https://api-free.deepl.com/v2/translate';
-    
-    const formData = new URLSearchParams();
-    formData.append('text', text);
-    formData.append('source_lang', sourceLang);
-    formData.append('target_lang', targetDeepLCode);
-    formData.append('auth_key', apiKey);
+    // Use local proxy server
+    const url = 'http://localhost:3001';
     
     const response = await fetch(url, {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
+        'Content-Type': 'application/json',
       },
-      body: formData
+      body: JSON.stringify({
+        text,
+        source: sourceLang,
+        target: targetLang
+      })
     });
     
     if (!response.ok) {
       const errorData = await response.json();
-      console.error('DeepL API error:', errorData);
+      console.error('Translation proxy error:', errorData);
       return text;
     }
     
     const data = await response.json();
     
-    if (data.translations && data.translations.length > 0) {
-      return data.translations[0].text;
+    if (data.success && data.translatedText) {
+      return data.translatedText;
     }
     
     console.warn('Translation failed for text:', text, 'Response:', data);
     return text;
   } catch (error) {
     console.error('Translation error:', error);
+    console.warn('Is the DeepL proxy server running on port 3001?');
     return text;
   }
 }
 
 // Translate HTML content
-async function translateHTML(html, targetLang, apiKey) {
+async function translateHTML(html, targetLang) {
   try {
     const parser = new DOMParser();
     const doc = parser.parseFromString(html, 'text/html');
@@ -144,7 +114,7 @@ async function translateHTML(html, targetLang, apiKey) {
     for (let i = 0; i < textNodes.length; i += batchSize) {
       const batch = textNodes.slice(i, i + batchSize);
       const translations = await Promise.all(
-        batch.map(node => translateText(node.textContent, targetLang, apiKey))
+        batch.map(node => translateText(node.textContent, targetLang))
       );
       
       translations.forEach((translatedText, index) => {
@@ -162,7 +132,7 @@ async function translateHTML(html, targetLang, apiKey) {
     for (const img of images) {
       const alt = img.getAttribute('alt');
       if (alt && alt.trim()) {
-        const translatedAlt = await translateText(alt, targetLang, apiKey);
+        const translatedAlt = await translateText(alt, targetLang);
         img.setAttribute('alt', translatedAlt);
       }
     }
@@ -172,7 +142,7 @@ async function translateHTML(html, targetLang, apiKey) {
     for (const element of elementsWithTitle) {
       const title = element.getAttribute('title');
       if (title && title.trim()) {
-        const translatedTitle = await translateText(title, targetLang, apiKey);
+        const translatedTitle = await translateText(title, targetLang);
         element.setAttribute('title', translatedTitle);
       }
     }
@@ -186,7 +156,7 @@ async function translateHTML(html, targetLang, apiKey) {
   
   // Function to copy a page
   async function copyPage(sourcePath, targetPath, token, options = {}) {
-    const { translate = false, targetLang = 'en', apiKey = null } = options;
+    const { translate = false, targetLang = 'en' } = options;
     
     // 1. Fetch the source document
     const fetchOpts = getOpts(token, 'GET');
@@ -203,11 +173,9 @@ async function translateHTML(html, targetLang, apiKey) {
     let html = await resp.text();
     
     // 2. Translate if requested
-    if (translate && targetLang && apiKey) {
+    if (translate && targetLang) {
       console.log(`Translating ${sourcePath} to ${targetLang}`);
-      html = await translateHTML(html, targetLang, apiKey);
-    } else if (translate && !apiKey) {
-      console.warn('Translation requested but no API key provided');
+      html = await translateHTML(html, targetLang);
     }
     
     // 3. Save to target location
@@ -397,7 +365,7 @@ async function copyPageTree(sourcePath, targetLanguage, token, basePath, pushOpt
     };
   }
   
-  const { preview = false, live = false, translate = false, apiKey = null } = pushOptions;
+  const { preview = false, live = false, translate = false } = pushOptions;
   const shouldPush = preview || live;
   
   console.log(`Starting copy of ${selectedCheckboxes.length} selected pages`);
@@ -434,8 +402,7 @@ async function copyPageTree(sourcePath, targetLanguage, token, basePath, pushOpt
       try {
         const result = await copyPage(fullSourcePath, fullTargetPath, token, {
           translate,
-          targetLang: targetLanguage,
-          apiKey
+          targetLang: targetLanguage
         });
         
         if (result.success) {
@@ -909,18 +876,11 @@ function handleRollout(event, token, basePath) {
   const targetLanguage = form['rollout-language'].value;
   const copyTree = form['rollout-tree'].checked;
   const translateContent = form['translate-content']?.checked || false;
-  const deeplApiKey = form['deepl-api-key']?.value || '';
   const pushPreview = form['push-preview']?.checked || false;
   const pushLive = form['push-live']?.checked || false;
   
   if (!sourcePath || !targetLanguage) {
     alert('Please fill in all fields');
-    return;
-  }
-  
-  // Validate API key if translation is enabled
-  if (translateContent && !deeplApiKey) {
-    alert('Please enter a DeepL API key to enable translation');
     return;
   }
   
@@ -939,8 +899,7 @@ function handleRollout(event, token, basePath) {
     copyPageTree(sourcePath, targetLanguage, token, basePath, { 
       preview: pushPreview, 
       live: pushLive,
-      translate: translateContent,
-      apiKey: deeplApiKey
+      translate: translateContent
     })
       .then((result) => {
         if (result.total === 0) {
@@ -1072,8 +1031,7 @@ function handleRollout(event, token, basePath) {
     
     copyPage(fullSourcePath, fullDestinationPath, token, {
       translate: translateContent,
-      targetLang: targetLanguage,
-      apiKey: deeplApiKey
+      targetLang: targetLanguage
     })
       .then(async (result) => {
         if (result.success) {
@@ -1165,32 +1123,6 @@ function handleRollout(event, token, basePath) {
     const form = document.getElementById('rollout-form');
     if (form) {
       form.addEventListener('submit', (event) => handleRollout(event, token, cmp.path));
-    }
-    
-    // Setup translate checkbox to show/hide API key field
-    const translateCheckbox = document.getElementById('translate-content');
-    const apiKeySection = document.getElementById('deepl-api-key-section');
-    const apiKeyInput = document.getElementById('deepl-api-key');
-    
-    if (translateCheckbox && apiKeySection) {
-      // Load saved API key from localStorage
-      const savedApiKey = localStorage.getItem('deepl-api-key');
-      if (savedApiKey && apiKeyInput) {
-        apiKeyInput.value = savedApiKey;
-      }
-      
-      translateCheckbox.addEventListener('change', () => {
-        apiKeySection.style.display = translateCheckbox.checked ? 'block' : 'none';
-      });
-      
-      // Save API key to localStorage when changed
-      if (apiKeyInput) {
-        apiKeyInput.addEventListener('change', () => {
-          if (apiKeyInput.value) {
-            localStorage.setItem('deepl-api-key', apiKeyInput.value);
-          }
-        });
-      }
     }
     
     // Setup live preview for destination path
