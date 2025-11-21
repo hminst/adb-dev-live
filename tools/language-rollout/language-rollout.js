@@ -730,7 +730,7 @@ function handleRollout(event, token, basePath) {
         
         const type = result.success ? 'success' : 'warning';
         const details = result.details
-          .filter(d => d.status !== 'success' || result.failed > 0 || result.pushFailed > 0)
+          .filter(d => d.status !== 'success' || result.failed > 0 || (result.pushFailed && result.pushFailed > 0))
           .map(d => {
             let message = `${d.path} ${d.status === 'success' || d.status === 'success-push-failed' ? '→ ' + d.targetPath : '- ' + (d.error || 'Failed')}`;
             
@@ -762,7 +762,18 @@ function handleRollout(event, token, basePath) {
         if (result.hadPushOption) {
           const pushCount = (pushPreview ? 1 : 0) + (pushLive ? 1 : 0);
           const expectedPushes = result.successful * pushCount;
-          summary += ` Pushed ${result.pushed}/${expectedPushes} to ${pushPreview ? 'preview' : ''}${pushPreview && pushLive ? ' and ' : ''}${pushLive ? 'live' : ''}.`;
+          const pushedCount = result.pushed || 0;
+          const pushFailedCount = result.pushFailed || 0;
+          
+          const pushTargets = [];
+          if (pushPreview) pushTargets.push('preview');
+          if (pushLive) pushTargets.push('live');
+          
+          summary += ` Pushed ${pushedCount}/${expectedPushes} to ${pushTargets.join(' and ')}.`;
+          
+          if (pushFailedCount > 0) {
+            summary += ` ${pushFailedCount} push operation${pushFailedCount !== 1 ? 's' : ''} failed.`;
+          }
         }
         
         const stats = [
@@ -772,9 +783,11 @@ function handleRollout(event, token, basePath) {
         ];
         
         if (result.hadPushOption) {
-          stats.push({ label: 'Pushed', value: result.pushed });
-          if (result.pushFailed > 0) {
-            stats.push({ label: 'Push Failed', value: result.pushFailed });
+          const pushedCount = result.pushed || 0;
+          const pushFailedCount = result.pushFailed || 0;
+          stats.push({ label: 'Pushed Successfully', value: pushedCount });
+          if (pushFailedCount > 0) {
+            stats.push({ label: 'Push Failed', value: pushFailedCount });
           }
         }
         
