@@ -35,22 +35,34 @@ async function checkPageExists(path, token) {
   }
 }
 
-// Translate text using MyMemory Translation API
+// Translate text using LibreTranslate API
 async function translateText(text, targetLang) {
   if (!text || !text.trim()) return text;
   
   try {
     const sourceLang = 'en'; // Assume source is English
-    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sourceLang}|${targetLang}`;
+    const url = 'https://libretranslate.com/translate';
     
-    const response = await fetch(url);
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        q: text,
+        source: sourceLang,
+        target: targetLang,
+        format: 'text'
+      })
+    });
+    
     const data = await response.json();
     
-    if (data.responseStatus === 200 && data.responseData) {
-      return data.responseData.translatedText;
+    if (data.translatedText) {
+      return data.translatedText;
     }
     
-    console.warn('Translation failed for text:', text);
+    console.warn('Translation failed for text:', text, 'Response:', data);
     return text;
   } catch (error) {
     console.error('Translation error:', error);
@@ -73,6 +85,8 @@ async function translateHTML(html, targetLang) {
         acceptNode: (node) => {
           // Skip empty text nodes and those in script/style tags
           if (!node.textContent.trim()) return NodeFilter.FILTER_REJECT;
+          // Skip section metadata, as this is technical content that should not be translated
+          if (node.classList?.contains('section-metadata')) return NodeFilter.FILTER_REJECT;
           const parent = node.parentElement;
           if (parent && (parent.tagName === 'SCRIPT' || parent.tagName === 'STYLE')) {
             return NodeFilter.FILTER_REJECT;
