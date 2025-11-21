@@ -474,22 +474,26 @@ function buildTreeStructure(files, basePath, sourcePath, targetLanguage) {
     const relativePath = item.path.replace(basePath + sourcePath, '');
     const parts = relativePath.split('/').filter(p => p);
     const targetPath = `/${targetLanguage}${sourcePath}${relativePath}`;
-    // Store full source path (formSourcePath + relativePath) for copying
     const fullSourcePath = `${sourcePath}${relativePath}`;
     
     let current = tree;
     parts.forEach((part, index) => {
       if (!current[part]) {
-        current[part] = {
-          name: part,
-          isFile: index === parts.length - 1,
-          children: {},
-          sourcePath: fullSourcePath, // Full path from form root
-          targetPath,
-          exists: item.exists || false,
-        };
+        if (index === parts.length - 1) {
+          // File node
+          current[part] = {
+            __file: true,
+            path: item.path,
+            sourcePath: fullSourcePath,
+            targetPath,
+            exists: item.exists || false,
+          };
+        } else {
+          // Folder node
+          current[part] = {};
+        }
       }
-      current = current[part].children;
+      current = current[part];
     });
   });
   
@@ -497,54 +501,59 @@ function buildTreeStructure(files, basePath, sourcePath, targetLanguage) {
 }
 
 // Render tree node recursively
-function renderTreeNode(node, level = 0, isLast = true, prefix = '', parentPath = '') {
+function renderTreeNode(node, name, level, basePath, parentPath = '') {
   const indent = '  '.repeat(level);
-  const connector = level === 0 ? '' : (isLast ? '└─ ' : '├─ ');
-  const icon = node.isFile ? '📄' : '📁';
-  const existsClass = node.exists ? ' tree-node-exists' : '';
-  const existsIndicator = node.exists ? '<span class="exists-badge" title="Page already exists - will be overwritten">⚠️ Exists</span>' : '';
+  const isFile = node.__file;
+  const currentPath = parentPath ? `${parentPath}/${name}` : name;
   
-  // Generate unique ID for checkbox (works for both files and folders)
-  const nodePath = node.isFile ? node.sourcePath : `${parentPath}/${node.name}`.replace(/^\/+/, '');
-  const nodeId = `node-${nodePath.replace(/[^a-zA-Z0-9]/g, '-')}`;
-  const checkboxClass = node.isFile ? 'file-checkbox' : 'folder-checkbox';
-  
-  const checkbox = `
-    <input type="checkbox" 
-           class="${checkboxClass}" 
-           id="${nodeId}" 
-           data-path="${nodePath}"
-           ${node.isFile ? `data-source="${node.sourcePath}" data-target="${node.targetPath}" data-exists="${node.exists}"` : ''}
-           checked>
-  `;
-  
-  let html = `
-    <div class="tree-node${existsClass}" data-level="${level}" data-node-path="${nodePath}">
-      <div class="tree-node-content">
-        ${checkbox}
-        <span class="tree-connector">${prefix}${connector}</span>
-        <span class="tree-icon">${icon}</span>
-        <label class="tree-name" for="${nodeId}">${node.name}</label>
-        ${node.isFile ? existsIndicator : ''}
-      </div>
-      ${node.isFile ? `
+  if (isFile) {
+    const existsClass = node.exists ? ' exists' : '';
+    const existsIndicator = node.exists ? '<span class="exists-badge" title="Page already exists - will be overwritten">⚠️ Exists</span>' : '';
+    
+    return `
+      <div class="tree-node tree-file-item${existsClass}" data-level="${level}" data-path="${currentPath}">
+        <div class="tree-node-content">
+          <span class="tree-connector">${indent}</span>
+          <input type="checkbox" 
+                 class="file-checkbox" 
+                 data-path="${currentPath}"
+                 data-source="${node.sourcePath}" 
+                 data-target="${node.targetPath}" 
+                 data-exists="${node.exists}"
+                 id="file-${currentPath.replace(/\//g, '-')}"
+                 checked>
+          <label for="file-${currentPath.replace(/\//g, '-')}" class="tree-name">📄 ${name}</label>
+          ${existsIndicator}
+        </div>
         <div class="tree-target">
           <span class="tree-arrow">→</span>
           <span class="tree-target-path">${node.targetPath}</span>
         </div>
-      ` : ''}
-    </div>
-  `;
-  
-  // Render children
-  const childKeys = Object.keys(node.children);
-  childKeys.forEach((key, index) => {
-    const isChildLast = index === childKeys.length - 1;
-    const childPrefix = prefix + (level === 0 ? '' : (isLast ? '   ' : '│  '));
-    html += renderTreeNode(node.children[key], level + 1, isChildLast, childPrefix, nodePath);
-  });
-  
-  return html;
+      </div>
+    `;
+  } else {
+    let html = `
+      <div class="tree-node tree-folder-item" data-level="${level}" data-path="${currentPath}">
+        <div class="tree-node-content">
+          <span class="tree-connector">${indent}</span>
+          <input type="checkbox" 
+                 class="folder-checkbox" 
+                 data-path="${currentPath}" 
+                 id="folder-${currentPath.replace(/\//g, '-')}"
+                 checked>
+          <label for="folder-${currentPath.replace(/\//g, '-')}" class="tree-name">📁 ${name}</label>
+        </div>
+      </div>
+    `;
+    
+    const children = Object.keys(node).filter(k => k !== '__file').sort();
+    children.forEach(childName => {
+      const childNode = node[childName];
+      html += renderTreeNode(childNode, childName, level + 1, basePath, currentPath);
+    });
+    
+    return html;
+  }
 }
 
 // Check if a path contains a language directory
@@ -620,10 +629,9 @@ async function previewPageTree(sourcePath, targetLanguage, basePath, token) {
     
     // Render tree
     let treeHTML = '';
-    const rootKeys = Object.keys(tree);
-    rootKeys.forEach((key, index) => {
-      const isLast = index === rootKeys.length - 1;
-      treeHTML += renderTreeNode(tree[key], 0, isLast);
+    const rootKeys = Object.keys(tree).sort();
+    rootKeys.forEach((key) => {
+      treeHTML += renderTreeNode(tree[key], key, 0, basePath + sourcePath, '');
     });
     
     const existsWarning = existingCount > 0 ? `

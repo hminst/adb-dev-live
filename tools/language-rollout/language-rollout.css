@@ -486,11 +486,6 @@ button[type="submit"]:disabled:hover {
   user-select: none;
 }
 
-.tree-icon {
-  font-size: 1rem;
-  flex-shrink: 0;
-}
-
 .tree-name {
   color: #333;
   font-weight: 500;
@@ -549,19 +544,19 @@ button[type="submit"]:disabled:hover {
   cursor: help;
 }
 
-.tree-node-exists {
+.tree-file-item.exists {
   background: #fff9e6;
   border-left: 3px solid #ff9800;
   padding-left: 0.25rem;
   margin-left: -0.25rem;
 }
 
-.tree-node-exists .tree-name {
+.tree-file-item.exists .tree-name {
   color: #d97706;
   font-weight: 600;
 }
 
-.tree-node-exists .tree-target-path {
+.tree-file-item.exists .tree-target-path {
   color: #d97706;
 }
 
