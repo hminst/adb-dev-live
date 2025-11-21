@@ -562,9 +562,6 @@ async function previewPageTree(sourcePath, targetLanguage, basePath, token) {
     
     treePreviewList.innerHTML = `
       <div class="preview-count">
-        <span id="selection-count">
-          <strong>${htmlFilesWithExistence.length}</strong> of ${htmlFilesWithExistence.length} page${htmlFilesWithExistence.length !== 1 ? 's' : ''} selected
-        </span>
         <span class="preview-note">(excluding language-specific pages)</span>
         <span class="preview-stats">${newCount} new, ${existingCount} existing</span>
       </div>
@@ -574,6 +571,20 @@ async function previewPageTree(sourcePath, targetLanguage, basePath, token) {
     
     // Add checkbox event listeners
     setupCheckboxListeners();
+    
+    // Show submit button after tree is loaded
+    const submitButton = document.querySelector('button[type="submit"]');
+    if (submitButton) {
+      submitButton.style.display = 'block';
+    }
+    
+    // Show selection summary
+    const selectionSummary = document.getElementById('selection-summary');
+    if (selectionSummary) {
+      selectionSummary.style.display = 'block';
+    }
+    
+    updateSelectionCount();
   } catch (error) {
     treePreviewLoading.style.display = 'none';
     treePreviewList.innerHTML = `<div class="preview-error">❌ Error scanning directory: ${error.message}</div>`;
@@ -692,6 +703,8 @@ function updateDestinationPreview(basePath, token) {
   const destinationPreview = document.getElementById('destination-preview');
   const destinationPath = document.getElementById('destination-path');
   const treePreview = document.getElementById('tree-preview');
+  const previewButton = document.getElementById('preview-button');
+  const submitButton = document.querySelector('button[type="submit"]');
   
   const source = sourceInput?.value || '';
   const language = languageSelect?.value || '';
@@ -703,15 +716,21 @@ function updateDestinationPreview(basePath, token) {
     destinationPath.textContent = fullDestination + treeIndicator;
     destinationPreview.style.display = 'block';
     
-    // Show tree preview if tree mode is enabled
+    // Show preview button if tree mode is enabled
     if (isTree) {
-      previewPageTree(source, language, basePath, token);
-    } else {
+      if (previewButton) previewButton.style.display = 'block';
       if (treePreview) treePreview.style.display = 'none';
+      if (submitButton) submitButton.style.display = 'none';
+    } else {
+      if (previewButton) previewButton.style.display = 'none';
+      if (treePreview) treePreview.style.display = 'none';
+      if (submitButton) submitButton.style.display = 'block';
     }
   } else {
     destinationPreview.style.display = 'none';
+    if (previewButton) previewButton.style.display = 'none';
     if (treePreview) treePreview.style.display = 'none';
+    if (submitButton) submitButton.style.display = source && language ? 'block' : 'none';
   }
 }
 
@@ -977,6 +996,18 @@ function handleRollout(event, token, basePath) {
     
     if (treeCheckbox) {
       treeCheckbox.addEventListener('change', () => updateDestinationPreview(cmp.path, token));
+    }
+    
+    // Setup preview button
+    const previewButton = document.getElementById('preview-button');
+    if (previewButton && sourceInput && languageSelect) {
+      previewButton.addEventListener('click', () => {
+        const source = sourceInput.value || '';
+        const language = languageSelect.value || '';
+        if (source && language) {
+          previewPageTree(source, language, cmp.path, token);
+        }
+      });
     }
     
     if (refreshPreviewBtn) {

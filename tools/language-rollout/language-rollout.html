@@ -47,6 +47,8 @@
           </div>
         </div>
         
+        <button type="button" id="preview-button" style="display: none;">Preview Pages</button>
+        
         <div id="destination-preview" style="margin-top: 1rem; padding: 1rem; background: #e8f4f8; border-radius: 4px; display: none;">
           <strong>Destination:</strong> <code id="destination-path"></code>
         </div>
@@ -65,6 +67,9 @@
             <span>Scanning directory...</span>
           </div>
           <div id="tree-preview-list"></div>
+          <div id="selection-summary" style="display: none;">
+            <strong id="selection-count">0 pages selected</strong>
+          </div>
         </div>
         
         <div id="progress-section" style="display: none;">
@@ -78,7 +83,7 @@
           <div id="results-content"></div>
         </div>
         
-        <button data-action="rollout" type="submit">Rollout</button>
+        <button data-action="rollout" type="submit" style="display: none;">Rollout</button>
     </form>
   </body>
 </html>
