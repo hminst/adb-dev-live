@@ -283,19 +283,26 @@ async function copyPageTree(sourcePath, targetLanguage, token, basePath, pushOpt
             const pushResults = await pushPage(fullTargetPath, token, { preview, live });
             resultItem.pushResults = pushResults;
             
+            console.log('Push results:', pushResults);
+            console.log('Preview requested:', preview, 'Live requested:', live);
+            
             // Track push results
             let pushSuccess = true;
             if (preview && pushResults.preview) {
+              console.log('Preview result:', pushResults.preview);
               if (pushResults.preview.success) {
                 progressState.pushed++;
+                console.log('Preview push succeeded, pushed count:', progressState.pushed);
               } else {
                 progressState.pushFailed++;
                 pushSuccess = false;
               }
             }
             if (live && pushResults.live) {
+              console.log('Live result:', pushResults.live);
               if (pushResults.live.success) {
                 progressState.pushed++;
+                console.log('Live push succeeded, pushed count:', progressState.pushed);
               } else {
                 progressState.pushFailed++;
                 pushSuccess = false;
@@ -331,6 +338,9 @@ async function copyPageTree(sourcePath, targetLanguage, token, basePath, pushOpt
     const successful = results.filter(r => r.status === 'success' || r.status === 'success-push-failed');
     const failed = results.filter(r => r.status === 'failed' || r.status === 'error');
     const pushFailed = results.filter(r => r.status === 'success-push-failed');
+    
+    console.log('Final progressState:', progressState);
+    console.log('Returning pushed count:', progressState.pushed);
     
     return {
       success: failed.length === 0,
