@@ -8,6 +8,7 @@ A local proxy server for DeepL translation API that keeps your API key secure on
 - **Simple**: Pure Node.js, no external dependencies
 - **CORS-enabled**: Works with browser-based applications
 - **Graceful shutdown**: Handles SIGTERM and SIGINT signals
+- **Pattern preservation**: Automatically preserves `:word:` patterns (like `:logo:`, `:toggle:`, `:globe:`) from translation
 
 ## Setup
 
@@ -79,6 +80,28 @@ The server will start on `http://localhost:3001`.
   "error": "Error message"
 }
 ```
+
+### Pattern Preservation
+
+The proxy automatically preserves `:word:` patterns from translation. This is useful for icon placeholders or custom tokens.
+
+**Example:**
+```json
+// Request
+{
+  "text": "Click the :logo: to go home or :toggle: to switch themes",
+  "source": "en",
+  "target": "de"
+}
+
+// Response
+{
+  "success": true,
+  "translatedText": "Klicken Sie auf :logo:, um zur Startseite zu gelangen, oder :toggle:, um das Thema zu wechseln"
+}
+```
+
+Patterns like `:logo:`, `:toggle:`, `:globe:`, `:icon:`, etc., remain unchanged while the surrounding text is translated.
 
 ## Supported Languages
 

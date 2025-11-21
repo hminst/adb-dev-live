@@ -52,10 +52,51 @@ function mapToDeepLCode(langCode) {
   return LANGUAGE_MAP[langCode] || langCode.toUpperCase();
 }
 
+// Preserve special patterns like :logo:, :toggle:, :globe: from translation
+function preservePatterns(text) {
+  const pattern = /:\w+:/g;
+  const matches = [];
+  let preservedText = text;
+  let match;
+  
+  // Find all :word: patterns
+  while ((match = pattern.exec(text)) !== null) {
+    matches.push(match[0]);
+  }
+  
+  // Log preserved patterns for debugging
+  if (matches.length > 0) {
+    console.log(`  Preserving ${matches.length} pattern(s):`, matches.join(', '));
+  }
+  
+  // Replace each pattern with a unique placeholder
+  matches.forEach((match, index) => {
+    const placeholder = `___PRESERVE_${index}___`;
+    preservedText = preservedText.replace(match, placeholder);
+  });
+  
+  return { preservedText, matches };
+}
+
+// Restore preserved patterns after translation
+function restorePatterns(text, matches) {
+  let restoredText = text;
+  
+  matches.forEach((match, index) => {
+    const placeholder = `___PRESERVE_${index}___`;
+    restoredText = restoredText.replace(placeholder, match);
+  });
+  
+  return restoredText;
+}
+
 function translateText(text, sourceLang, targetLang) {
   return new Promise((resolve, reject) => {
+    // Preserve special patterns before translation
+    const { preservedText, matches } = preservePatterns(text);
+    
     const formData = new URLSearchParams();
-    formData.append('text', text);
+    formData.append('text', preservedText);
     formData.append('source_lang', sourceLang);
     formData.append('target_lang', targetLang);
     formData.append('auth_key', API_KEY);
@@ -95,9 +136,11 @@ function translateText(text, sourceLang, targetLang) {
 
           const parsed = JSON.parse(data);
           if (res.statusCode === 200 && parsed.translations && parsed.translations.length > 0) {
+            // Restore preserved patterns in the translated text
+            const translatedText = restorePatterns(parsed.translations[0].text, matches);
             resolve({
               success: true,
-              translatedText: parsed.translations[0].text,
+              translatedText,
             });
           } else {
             console.error(`DeepL API error (${res.statusCode}):`, data);
@@ -175,10 +218,21 @@ const server = http.createServer(async (req, res) => {
       const sourceLang = source || 'EN';
       const targetLang = mapToDeepLCode(target);
 
-      console.log(`Translating: ${text.substring(0, 50)}... [${sourceLang} → ${targetLang}]`);
+      // Check if text contains patterns to preserve
+      const hasPatterns = /:\w+:/g.test(text);
+      if (hasPatterns) {
+        console.log(`Translating (with preserved patterns): ${text.substring(0, 100)}... [${sourceLang} → ${targetLang}]`);
+      } else {
+        console.log(`Translating: ${text.substring(0, 50)}... [${sourceLang} → ${targetLang}]`);
+      }
 
       const result = await translateText(text, sourceLang, targetLang);
-
+      
+      if (hasPatterns) {
+        console.log('Translation result (patterns preserved):', result);
+      } else {
+        console.log('Translation result:', result);
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(result));
     } catch (error) {
