@@ -34,9 +34,108 @@ async function checkPageExists(path, token) {
     return false;
   }
 }
+
+// Translate text using MyMemory Translation API
+async function translateText(text, targetLang) {
+  if (!text || !text.trim()) return text;
+  
+  try {
+    const sourceLang = 'en'; // Assume source is English
+    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${sourceLang}|${targetLang}`;
+    
+    const response = await fetch(url);
+    const data = await response.json();
+    
+    if (data.responseStatus === 200 && data.responseData) {
+      return data.responseData.translatedText;
+    }
+    
+    console.warn('Translation failed for text:', text);
+    return text;
+  } catch (error) {
+    console.error('Translation error:', error);
+    return text;
+  }
+}
+
+// Translate HTML content
+async function translateHTML(html, targetLang) {
+  try {
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(html, 'text/html');
+    
+    // Get all text nodes
+    const textNodes = [];
+    const walker = document.createTreeWalker(
+      doc.body,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode: (node) => {
+          // Skip empty text nodes and those in script/style tags
+          if (!node.textContent.trim()) return NodeFilter.FILTER_REJECT;
+          const parent = node.parentElement;
+          if (parent && (parent.tagName === 'SCRIPT' || parent.tagName === 'STYLE')) {
+            return NodeFilter.FILTER_REJECT;
+          }
+          return NodeFilter.FILTER_ACCEPT;
+        }
+      }
+    );
+    
+    let node;
+    while (node = walker.nextNode()) {
+      textNodes.push(node);
+    }
+    
+    // Translate text nodes in batches to avoid rate limiting
+    const batchSize = 5;
+    for (let i = 0; i < textNodes.length; i += batchSize) {
+      const batch = textNodes.slice(i, i + batchSize);
+      const translations = await Promise.all(
+        batch.map(node => translateText(node.textContent, targetLang))
+      );
+      
+      translations.forEach((translatedText, index) => {
+        batch[index].textContent = translatedText;
+      });
+      
+      // Small delay to avoid rate limiting
+      if (i + batchSize < textNodes.length) {
+        await new Promise(resolve => setTimeout(resolve, 200));
+      }
+    }
+    
+    // Also translate alt attributes in images
+    const images = doc.querySelectorAll('img[alt]');
+    for (const img of images) {
+      const alt = img.getAttribute('alt');
+      if (alt && alt.trim()) {
+        const translatedAlt = await translateText(alt, targetLang);
+        img.setAttribute('alt', translatedAlt);
+      }
+    }
+    
+    // Also translate title attributes
+    const elementsWithTitle = doc.querySelectorAll('[title]');
+    for (const element of elementsWithTitle) {
+      const title = element.getAttribute('title');
+      if (title && title.trim()) {
+        const translatedTitle = await translateText(title, targetLang);
+        element.setAttribute('title', translatedTitle);
+      }
+    }
+    
+    return doc.documentElement.outerHTML;
+  } catch (error) {
+    console.error('HTML translation error:', error);
+    return html;
+  }
+}
   
   // Function to copy a page
-  async function copyPage(sourcePath, targetPath, token) {
+  async function copyPage(sourcePath, targetPath, token, options = {}) {
+    const { translate = false, targetLang = 'en' } = options;
+    
     // 1. Fetch the source document
     const fetchOpts = getOpts(token, 'GET');
     const resp = await fetch(`https://admin.da.live/source${sourcePath}`, fetchOpts);
@@ -49,9 +148,15 @@ async function checkPageExists(path, token) {
       };
     }
     
-    const html = await resp.text();
+    let html = await resp.text();
     
-    // 2. Save to target location
+    // 2. Translate if requested
+    if (translate && targetLang) {
+      console.log(`Translating ${sourcePath} to ${targetLang}`);
+      html = await translateHTML(html, targetLang);
+    }
+    
+    // 3. Save to target location
     const body = new FormData();
     const data = new Blob([html], { type: 'text/html' });
     body.append('data', data);
@@ -71,7 +176,7 @@ async function checkPageExists(path, token) {
     
     return { 
       success: true, 
-      message: `Successfully copied ${sourcePath} to ${targetPath}`, 
+      message: `Successfully copied ${sourcePath} to ${targetPath}${translate ? ' (translated)' : ''}`, 
       status: saveResp.status 
     };
   }
@@ -238,10 +343,13 @@ async function copyPageTree(sourcePath, targetLanguage, token, basePath, pushOpt
     };
   }
   
-  const { preview = false, live = false } = pushOptions;
+  const { preview = false, live = false, translate = false } = pushOptions;
   const shouldPush = preview || live;
   
   console.log(`Starting copy of ${selectedCheckboxes.length} selected pages`);
+  if (translate) {
+    console.log(`Will translate content to: ${targetLanguage}`);
+  }
   if (shouldPush) {
     console.log(`Will push to: ${preview ? 'preview' : ''}${preview && live ? ', ' : ''}${live ? 'live' : ''}`);
   }
@@ -267,10 +375,13 @@ async function copyPageTree(sourcePath, targetLanguage, token, basePath, pushOpt
       const fullTargetPath = targetPath.startsWith('/') ? `${basePath}${targetPath}` : `${basePath}/${targetPath}`;
       
       console.log(`Copy paths: ${fullSourcePath} → ${fullTargetPath}`);
-      updateProgress(`Copying ${progressState.completed + 1}/${progressState.total}: ${sourcePath}`);
+      updateProgress(`${translate ? 'Translating & copying' : 'Copying'} ${progressState.completed + 1}/${progressState.total}: ${sourcePath}`);
       
       try {
-        const result = await copyPage(fullSourcePath, fullTargetPath, token);
+        const result = await copyPage(fullSourcePath, fullTargetPath, token, {
+          translate,
+          targetLang: targetLanguage
+        });
         
         if (result.success) {
           progressState.completed++;
@@ -742,6 +853,7 @@ function handleRollout(event, token, basePath) {
   const sourcePath = form['rollout-source'].value;
   const targetLanguage = form['rollout-language'].value;
   const copyTree = form['rollout-tree'].checked;
+  const translateContent = form['translate-content']?.checked || false;
   const pushPreview = form['push-preview']?.checked || false;
   const pushLive = form['push-live']?.checked || false;
   
@@ -754,6 +866,7 @@ function handleRollout(event, token, basePath) {
   console.log('  Source:', sourcePath);
   console.log('  Language:', targetLanguage);
   console.log('  Copy Tree:', copyTree);
+  console.log('  Translate Content:', translateContent);
   console.log('  Push to Preview:', pushPreview);
   console.log('  Push to Live:', pushLive);
   
@@ -761,7 +874,11 @@ function handleRollout(event, token, basePath) {
     // Copy entire page tree (only selected files)
     hideResults(); // Clear previous results
     
-    copyPageTree(sourcePath, targetLanguage, token, basePath, { preview: pushPreview, live: pushLive })
+    copyPageTree(sourcePath, targetLanguage, token, basePath, { 
+      preview: pushPreview, 
+      live: pushLive,
+      translate: translateContent
+    })
       .then((result) => {
         if (result.total === 0) {
           showResults({
@@ -890,7 +1007,10 @@ function handleRollout(event, token, basePath) {
     console.log('  Full Source Path:', fullSourcePath);
     console.log('  Full Destination Path:', fullDestinationPath);
     
-    copyPage(fullSourcePath, fullDestinationPath, token)
+    copyPage(fullSourcePath, fullDestinationPath, token, {
+      translate: translateContent,
+      targetLang: targetLanguage
+    })
       .then(async (result) => {
         if (result.success) {
           let pushResults = null;
