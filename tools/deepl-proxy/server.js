@@ -83,6 +83,16 @@ function translateText(text, sourceLang, targetLang) {
 
       res.on('end', () => {
         try {
+          // Check if response is empty
+          if (!data || data.trim() === '') {
+            reject({
+              success: false,
+              error: 'Empty response from DeepL API',
+              statusCode: res.statusCode,
+            });
+            return;
+          }
+
           const parsed = JSON.parse(data);
           if (res.statusCode === 200 && parsed.translations && parsed.translations.length > 0) {
             resolve({
@@ -90,6 +100,7 @@ function translateText(text, sourceLang, targetLang) {
               translatedText: parsed.translations[0].text,
             });
           } else {
+            console.error(`DeepL API error (${res.statusCode}):`, data);
             reject({
               success: false,
               error: `DeepL API error: ${data}`,
@@ -97,9 +108,10 @@ function translateText(text, sourceLang, targetLang) {
             });
           }
         } catch (error) {
+          console.error('Failed to parse DeepL response:', data);
           reject({
             success: false,
-            error: `Failed to parse response: ${error.message}`,
+            error: `Failed to parse response: ${error.message}. Response: ${data.substring(0, 200)}`,
           });
         }
       });
@@ -145,6 +157,13 @@ const server = http.createServer(async (req, res) => {
 
   req.on('end', async () => {
     try {
+      // Check if body is empty
+      if (!body || body.trim() === '') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Empty request body' }));
+        return;
+      }
+
       const { text, source, target } = JSON.parse(body);
 
       if (!text || !target) {
@@ -164,6 +183,18 @@ const server = http.createServer(async (req, res) => {
       res.end(JSON.stringify(result));
     } catch (error) {
       console.error('Translation error:', error);
+      
+      // Check if it's a JSON parse error
+      if (error instanceof SyntaxError) {
+        console.error('Invalid JSON received. Body:', body);
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+          success: false,
+          error: `Invalid JSON: ${error.message}`,
+        }));
+        return;
+      }
+      
       res.writeHead(error.statusCode || 500, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({
         success: false,
