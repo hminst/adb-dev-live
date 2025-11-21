@@ -559,52 +559,49 @@ async function previewPageTree(sourcePath, targetLanguage, basePath, token) {
 
 // Get all child checkboxes for a given node path
 function getChildCheckboxes(nodePath) {
-  const allNodes = document.querySelectorAll('.tree-node');
-  const children = [];
+  const node = document.querySelector(`.tree-node[data-path="${nodePath}"]`);
+  if (!node) return [];
   
-  Array.from(allNodes).forEach(node => {
-    const nodePathAttr = node.getAttribute('data-node-path');
-    if (nodePathAttr && nodePathAttr.startsWith(nodePath + '/')) {
-      const checkbox = node.querySelector('.file-checkbox, .folder-checkbox');
-      if (checkbox) {
-        children.push(checkbox);
-      }
-    }
-  });
+  const children = [];
+  let currentNode = node.nextElementSibling;
+  const nodeLevel = parseInt(node.dataset.level, 10);
+  
+  while (currentNode && currentNode.classList.contains('tree-node')) {
+    const currentLevel = parseInt(currentNode.dataset.level, 10);
+    if (currentLevel <= nodeLevel) break;
+    
+    const checkbox = currentNode.querySelector('.file-checkbox, .folder-checkbox');
+    if (checkbox) children.push(checkbox);
+    
+    currentNode = currentNode.nextElementSibling;
+  }
   
   return children;
 }
 
 // Get parent folder checkbox for a given node path
 function getParentCheckbox(nodePath) {
-  const pathParts = nodePath.split('/').filter(p => p);
-  if (pathParts.length <= 1) return null;
+  const parts = nodePath.split('/').filter(p => p);
+  if (parts.length <= 1) return null;
   
-  pathParts.pop(); // Remove last part
-  const parentPath = pathParts.join('/');
-  
-  const parentNode = document.querySelector(`.tree-node[data-node-path="${parentPath}"]`);
-  return parentNode ? parentNode.querySelector('.folder-checkbox') : null;
+  const parentPath = parts.slice(0, -1).join('/');
+  return document.querySelector(`.folder-checkbox[data-path="${parentPath}"]`);
 }
 
 // Update parent checkbox state based on children
 function updateParentCheckbox(checkbox) {
-  const nodePath = checkbox.getAttribute('data-path');
+  const nodePath = checkbox.dataset.path;
   const parentCheckbox = getParentCheckbox(nodePath);
   
   if (!parentCheckbox) return;
   
-  const parentPath = parentCheckbox.getAttribute('data-path');
-  const siblings = getChildCheckboxes(parentPath);
+  const siblings = getChildCheckboxes(parentCheckbox.dataset.path);
+  const checkedSiblings = siblings.filter(cb => cb.checked);
   
-  if (siblings.length === 0) return;
-  
-  const checkedCount = siblings.filter(cb => cb.checked).length;
-  
-  if (checkedCount === 0) {
+  if (checkedSiblings.length === 0) {
     parentCheckbox.checked = false;
     parentCheckbox.indeterminate = false;
-  } else if (checkedCount === siblings.length) {
+  } else if (checkedSiblings.length === siblings.length) {
     parentCheckbox.checked = true;
     parentCheckbox.indeterminate = false;
   } else {
@@ -612,35 +609,27 @@ function updateParentCheckbox(checkbox) {
     parentCheckbox.indeterminate = true;
   }
   
-  // Recursively update parent's parent
   updateParentCheckbox(parentCheckbox);
 }
 
 // Handle folder checkbox change
 function handleFolderCheckboxChange(checkbox) {
-  const nodePath = checkbox.getAttribute('data-path');
   const isChecked = checkbox.checked;
-  
-  // Update all child checkboxes
+  const nodePath = checkbox.dataset.path;
   const children = getChildCheckboxes(nodePath);
+  
   children.forEach(child => {
     child.checked = isChecked;
     child.indeterminate = false;
   });
   
-  // Update parent state
   updateParentCheckbox(checkbox);
-  
-  // Update count
   updateSelectionCount();
 }
 
 // Handle file checkbox change
 function handleFileCheckboxChange(checkbox) {
-  // Update parent state
   updateParentCheckbox(checkbox);
-  
-  // Update count
   updateSelectionCount();
 }
 
