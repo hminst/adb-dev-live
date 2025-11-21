@@ -121,7 +121,7 @@ function hideProgress() {
     submitButton.disabled = false;
     submitButton.textContent = 'Rollout';
   }
-  progressState = { total: 0, completed: 0, failed: 0 };
+  progressState = { total: 0, completed: 0, failed: 0, pushed: 0, pushFailed: 0 };
 }
 
 // Show results
@@ -333,21 +333,25 @@ async function copyPageTree(sourcePath, targetLanguage, token, basePath, pushOpt
       }
     }
     
+    // Capture push counts before hiding progress (which resets progressState)
+    const pushedCount = progressState.pushed;
+    const pushFailedCount = progressState.pushFailed;
+    
     hideProgress();
     
     const successful = results.filter(r => r.status === 'success' || r.status === 'success-push-failed');
     const failed = results.filter(r => r.status === 'failed' || r.status === 'error');
     const pushFailed = results.filter(r => r.status === 'success-push-failed');
     
-    console.log('Final progressState:', progressState);
-    console.log('Returning pushed count:', progressState.pushed);
+    console.log('Final pushed count:', pushedCount);
+    console.log('Final pushFailed count:', pushFailedCount);
     
     return {
       success: failed.length === 0,
       total: results.length,
       successful: successful.length,
       failed: failed.length,
-      pushed: progressState.pushed,
+      pushed: pushedCount,
       pushFailed: pushFailed.length,
       details: results,
       hadPushOption: shouldPush,
