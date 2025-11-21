@@ -1,5 +1,6 @@
 import { crawl } from 'https://da.live/nx/public/utils/tree.js';
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
+import { getOpts, pushPage } from '/tools/shared/publish-utils.js';
 
 // Define available languages for rollout
 const LANGUAGES = [
@@ -21,16 +22,6 @@ const LANGUAGES = [
   { code: 'no', name: 'Norwegian / Norsk', flag: '🇳🇴' },
   { code: 'fi', name: 'Finnish / Suomi', flag: '🇫🇮' },
 ];
-
-// Add this helper function
-function getOpts(token, method = 'GET') {
-    return {
-      method,
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    };
-  }
 
 // Check if a page exists
 async function checkPageExists(path, token) {
@@ -84,101 +75,6 @@ async function checkPageExists(path, token) {
       status: saveResp.status 
     };
   }
-
-  // Helper function to extract org, repo, and path from full path
-  function parseFullPath(fullPath) {
-    // fullPath format: /{org}/{repo}/path/to/file.html
-    const parts = fullPath.split('/').filter(p => p);
-    if (parts.length < 2) {
-      throw new Error(`Invalid path format: ${fullPath}`);
-    }
-    const org = parts[0];
-    const repo = parts[1];
-    let remainingPath = '/' + parts.slice(2).join('/');
-    
-    // Remove .html extension for preview/live URLs
-    if (remainingPath.endsWith('.html')) {
-      remainingPath = remainingPath.slice(0, -5);
-    }
-    
-    return { org, repo, path: remainingPath };
-  }
-
-  // Function to push a page to preview
-  async function pushToPreview(fullPath, token) {
-    try {
-      const { org, repo, path } = parseFullPath(fullPath);
-      const url = `https://admin.hlx.page/preview/${org}/${repo}/main${path}`;
-      
-      const opts = getOpts(token, 'POST');
-      const resp = await fetch(url, opts);
-      
-      if (!resp.ok) {
-        return { 
-          success: false, 
-          message: `Could not push to preview: ${fullPath}`, 
-          status: resp.status 
-        };
-      }
-      
-      return { 
-        success: true, 
-        message: `Successfully pushed to preview: ${fullPath}` 
-      };
-    } catch (error) {
-      return { 
-        success: false, 
-        message: `Error pushing to preview: ${error.message}` 
-      };
-    }
-  }
-
-  // Function to push a page to live
-  async function pushToLive(fullPath, token) {
-    try {
-      const { org, repo, path } = parseFullPath(fullPath);
-      const url = `https://admin.hlx.page/live/${org}/${repo}/main${path}`;
-      
-      const opts = getOpts(token, 'POST');
-      const resp = await fetch(url, opts);
-      
-      if (!resp.ok) {
-        return { 
-          success: false, 
-          message: `Could not push to live: ${fullPath}`, 
-          status: resp.status 
-        };
-      }
-      
-      return { 
-        success: true, 
-        message: `Successfully published to live: ${fullPath}` 
-      };
-    } catch (error) {
-      return { 
-        success: false, 
-        message: `Error pushing to live: ${error.message}` 
-      };
-    }
-  }
-
-  // Function to push a page to both preview and/or live
-  // fullPath should include org and repo: /{org}/{repo}/path/to/file.html
-  async function pushPage(fullPath, token, options = {}) {
-    const { preview = false, live = false } = options;
-    const results = { preview: null, live: null };
-    
-    if (preview) {
-      results.preview = await pushToPreview(fullPath, token);
-    }
-    
-    if (live) {
-      results.live = await pushToLive(fullPath, token);
-    }
-    
-    return results;
-  }
-  
 
 // Progress tracking
 let progressState = {
