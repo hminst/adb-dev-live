@@ -84,6 +84,100 @@ async function checkPageExists(path, token) {
       status: saveResp.status 
     };
   }
+
+  // Helper function to extract org, repo, and path from full path
+  function parseFullPath(fullPath) {
+    // fullPath format: /{org}/{repo}/path/to/file.html
+    const parts = fullPath.split('/').filter(p => p);
+    if (parts.length < 2) {
+      throw new Error(`Invalid path format: ${fullPath}`);
+    }
+    const org = parts[0];
+    const repo = parts[1];
+    let remainingPath = '/' + parts.slice(2).join('/');
+    
+    // Remove .html extension for preview/live URLs
+    if (remainingPath.endsWith('.html')) {
+      remainingPath = remainingPath.slice(0, -5);
+    }
+    
+    return { org, repo, path: remainingPath };
+  }
+
+  // Function to push a page to preview
+  async function pushToPreview(fullPath, token) {
+    try {
+      const { org, repo, path } = parseFullPath(fullPath);
+      const url = `https://admin.hlx.page/preview/${org}/${repo}/main${path}`;
+      
+      const opts = getOpts(token, 'POST');
+      const resp = await fetch(url, opts);
+      
+      if (!resp.ok) {
+        return { 
+          success: false, 
+          message: `Could not push to preview: ${fullPath}`, 
+          status: resp.status 
+        };
+      }
+      
+      return { 
+        success: true, 
+        message: `Successfully pushed to preview: ${fullPath}` 
+      };
+    } catch (error) {
+      return { 
+        success: false, 
+        message: `Error pushing to preview: ${error.message}` 
+      };
+    }
+  }
+
+  // Function to push a page to live
+  async function pushToLive(fullPath, token) {
+    try {
+      const { org, repo, path } = parseFullPath(fullPath);
+      const url = `https://admin.hlx.page/live/${org}/${repo}/main${path}`;
+      
+      const opts = getOpts(token, 'POST');
+      const resp = await fetch(url, opts);
+      
+      if (!resp.ok) {
+        return { 
+          success: false, 
+          message: `Could not push to live: ${fullPath}`, 
+          status: resp.status 
+        };
+      }
+      
+      return { 
+        success: true, 
+        message: `Successfully published to live: ${fullPath}` 
+      };
+    } catch (error) {
+      return { 
+        success: false, 
+        message: `Error pushing to live: ${error.message}` 
+      };
+    }
+  }
+
+  // Function to push a page to both preview and/or live
+  // fullPath should include org and repo: /{org}/{repo}/path/to/file.html
+  async function pushPage(fullPath, token, options = {}) {
+    const { preview = false, live = false } = options;
+    const results = { preview: null, live: null };
+    
+    if (preview) {
+      results.preview = await pushToPreview(fullPath, token);
+    }
+    
+    if (live) {
+      results.live = await pushToLive(fullPath, token);
+    }
+    
+    return results;
+  }
   
 
 // Progress tracking
@@ -91,6 +185,8 @@ let progressState = {
   total: 0,
   completed: 0,
   failed: 0,
+  pushed: 0,
+  pushFailed: 0,
 };
 
 function updateProgress(message) {
@@ -229,7 +325,7 @@ const createCrawlCallback = (basePath, sourcePath, targetLanguage, token) => asy
 };
 
 // Copy entire page tree
-async function copyPageTree(sourcePath, targetLanguage, token, basePath) {
+async function copyPageTree(sourcePath, targetLanguage, token, basePath, pushOptions = {}) {
   // Get selected files from checkboxes
   const selectedCheckboxes = Array.from(document.querySelectorAll('.file-checkbox:checked'));
   
@@ -244,12 +340,20 @@ async function copyPageTree(sourcePath, targetLanguage, token, basePath) {
     };
   }
   
+  const { preview = false, live = false } = pushOptions;
+  const shouldPush = preview || live;
+  
   console.log(`Starting copy of ${selectedCheckboxes.length} selected pages`);
+  if (shouldPush) {
+    console.log(`Will push to: ${preview ? 'preview' : ''}${preview && live ? ', ' : ''}${live ? 'live' : ''}`);
+  }
   
   showProgress();
   progressState.total = selectedCheckboxes.length;
   progressState.completed = 0;
   progressState.failed = 0;
+  progressState.pushed = 0;
+  progressState.pushFailed = 0;
   
   const results = [];
   
@@ -270,11 +374,44 @@ async function copyPageTree(sourcePath, targetLanguage, token, basePath) {
         
         if (result.success) {
           progressState.completed++;
-          results.push({ 
+          const resultItem = { 
             path: sourcePath, 
             status: 'success', 
-            targetPath: fullTargetPath 
-          });
+            targetPath: fullTargetPath,
+            pushResults: null
+          };
+          
+          // Push to preview/live if requested
+          if (shouldPush) {
+            updateProgress(`Pushing ${progressState.completed}/${progressState.total}: ${targetPath}`);
+            const pushResults = await pushPage(fullTargetPath, token, { preview, live });
+            resultItem.pushResults = pushResults;
+            
+            // Track push results
+            let pushSuccess = true;
+            if (preview && pushResults.preview) {
+              if (pushResults.preview.success) {
+                progressState.pushed++;
+              } else {
+                progressState.pushFailed++;
+                pushSuccess = false;
+              }
+            }
+            if (live && pushResults.live) {
+              if (pushResults.live.success) {
+                progressState.pushed++;
+              } else {
+                progressState.pushFailed++;
+                pushSuccess = false;
+              }
+            }
+            
+            if (!pushSuccess) {
+              resultItem.status = 'success-push-failed';
+            }
+          }
+          
+          results.push(resultItem);
         } else {
           progressState.failed++;
           results.push({ 
@@ -295,15 +432,19 @@ async function copyPageTree(sourcePath, targetLanguage, token, basePath) {
     
     hideProgress();
     
-    const successful = results.filter(r => r.status === 'success');
+    const successful = results.filter(r => r.status === 'success' || r.status === 'success-push-failed');
     const failed = results.filter(r => r.status === 'failed' || r.status === 'error');
+    const pushFailed = results.filter(r => r.status === 'success-push-failed');
     
     return {
       success: failed.length === 0,
       total: results.length,
       successful: successful.length,
       failed: failed.length,
+      pushed: progressState.pushed,
+      pushFailed: pushFailed.length,
       details: results,
+      hadPushOption: shouldPush,
     };
   } catch (error) {
     hideProgress();
@@ -665,6 +806,8 @@ function handleRollout(event, token, basePath) {
   const sourcePath = form['rollout-source'].value;
   const targetLanguage = form['rollout-language'].value;
   const copyTree = form['rollout-tree'].checked;
+  const pushPreview = form['push-preview']?.checked || false;
+  const pushLive = form['push-live']?.checked || false;
   
   if (!sourcePath || !targetLanguage) {
     alert('Please fill in all fields');
@@ -675,12 +818,14 @@ function handleRollout(event, token, basePath) {
   console.log('  Source:', sourcePath);
   console.log('  Language:', targetLanguage);
   console.log('  Copy Tree:', copyTree);
+  console.log('  Push to Preview:', pushPreview);
+  console.log('  Push to Live:', pushLive);
   
   if (copyTree) {
     // Copy entire page tree (only selected files)
     hideResults(); // Clear previous results
     
-    copyPageTree(sourcePath, targetLanguage, token, basePath)
+    copyPageTree(sourcePath, targetLanguage, token, basePath, { preview: pushPreview, live: pushLive })
       .then((result) => {
         if (result.total === 0) {
           showResults({
@@ -692,23 +837,59 @@ function handleRollout(event, token, basePath) {
         
         const type = result.success ? 'success' : 'warning';
         const details = result.details
-          .filter(d => d.status !== 'success' || result.failed > 0) // Show all if there are failures, otherwise hide success details
-          .map(d => ({
-            status: d.status,
-            message: `${d.path} ${d.status === 'success' ? '→ ' + d.targetPath : '- ' + (d.error || 'Failed')}`,
-          }));
+          .filter(d => d.status !== 'success' || result.failed > 0 || result.pushFailed > 0)
+          .map(d => {
+            let message = `${d.path} ${d.status === 'success' || d.status === 'success-push-failed' ? '→ ' + d.targetPath : '- ' + (d.error || 'Failed')}`;
+            
+            // Add push details if applicable
+            if (d.pushResults) {
+              const pushDetails = [];
+              if (d.pushResults.preview) {
+                pushDetails.push(`preview: ${d.pushResults.preview.success ? '✓' : '✗'}`);
+              }
+              if (d.pushResults.live) {
+                pushDetails.push(`live: ${d.pushResults.live.success ? '✓' : '✗'}`);
+              }
+              if (pushDetails.length > 0) {
+                message += ` (${pushDetails.join(', ')})`;
+              }
+            }
+            
+            return {
+              status: d.status === 'success-push-failed' ? 'error' : d.status,
+              message,
+            };
+          });
+        
+        // Build summary message
+        let summary = result.success 
+          ? `Successfully copied ${result.successful} page${result.successful !== 1 ? 's' : ''} to ${targetLanguage.toUpperCase()}.`
+          : `Copied ${result.successful} page${result.successful !== 1 ? 's' : ''}, but ${result.failed} failed.`;
+        
+        if (result.hadPushOption) {
+          const pushCount = (pushPreview ? 1 : 0) + (pushLive ? 1 : 0);
+          const expectedPushes = result.successful * pushCount;
+          summary += ` Pushed ${result.pushed}/${expectedPushes} to ${pushPreview ? 'preview' : ''}${pushPreview && pushLive ? ' and ' : ''}${pushLive ? 'live' : ''}.`;
+        }
+        
+        const stats = [
+          { label: 'Total Pages', value: result.total },
+          { label: 'Copied', value: result.successful },
+          { label: 'Failed', value: result.failed },
+        ];
+        
+        if (result.hadPushOption) {
+          stats.push({ label: 'Pushed', value: result.pushed });
+          if (result.pushFailed > 0) {
+            stats.push({ label: 'Push Failed', value: result.pushFailed });
+          }
+        }
         
         showResults({
           title: result.success ? 'Rollout Successful' : 'Rollout Completed with Errors',
-          summary: result.success 
-            ? `Successfully copied ${result.successful} page${result.successful !== 1 ? 's' : ''} to ${targetLanguage.toUpperCase()}.`
-            : `Copied ${result.successful} page${result.successful !== 1 ? 's' : ''}, but ${result.failed} failed.`,
-          stats: [
-            { label: 'Total', value: result.total },
-            { label: 'Successful', value: result.successful },
-            { label: 'Failed', value: result.failed },
-          ],
-          details: result.failed > 0 ? details : [],
+          summary,
+          stats,
+          details: result.failed > 0 || result.pushFailed > 0 ? details : [],
         }, type);
         
         console.log('Tree rollout completed:', result);
@@ -741,24 +922,55 @@ function handleRollout(event, token, basePath) {
     console.log('  Full Destination Path:', fullDestinationPath);
     
     copyPage(fullSourcePath, fullDestinationPath, token)
-      .then((result) => {
+      .then(async (result) => {
         if (result.success) {
-          showResults({
-            title: 'Page Copied Successfully',
-            summary: `Successfully copied page to ${targetLanguage.toUpperCase()}.`,
-            stats: [
-              { label: 'Source', value: sourcePath },
-              { label: 'Target', value: `/${targetLanguage}${sourcePath}` },
-            ],
-          }, 'success');
+          let pushResults = null;
+          let pushSuccess = true;
           
-          console.log('Rollout successful:', result);
+          // Push to preview/live if requested
+          if (pushPreview || pushLive) {
+            pushResults = await pushPage(fullDestinationPath, token, { preview: pushPreview, live: pushLive });
+            
+            // Check if any push failed
+            if (pushPreview && pushResults.preview && !pushResults.preview.success) {
+              pushSuccess = false;
+            }
+            if (pushLive && pushResults.live && !pushResults.live.success) {
+              pushSuccess = false;
+            }
+          }
+          
+          const stats = [
+            { label: 'Source', value: sourcePath },
+            { label: 'Target', value: `/${targetLanguage}${sourcePath}` },
+          ];
+          
+          if (pushResults) {
+            if (pushResults.preview) {
+              stats.push({ label: 'Preview', value: pushResults.preview.success ? '✓ Pushed' : '✗ Failed' });
+            }
+            if (pushResults.live) {
+              stats.push({ label: 'Live', value: pushResults.live.success ? '✓ Published' : '✗ Failed' });
+            }
+          }
+          
+          showResults({
+            title: pushSuccess ? 'Page Copied Successfully' : 'Page Copied (Push Failed)',
+            summary: pushSuccess 
+              ? `Successfully copied page to ${targetLanguage.toUpperCase()}${pushResults ? ' and pushed.' : '.'}` 
+              : `Successfully copied page to ${targetLanguage.toUpperCase()}, but push failed.`,
+            stats,
+          }, pushSuccess ? 'success' : 'warning');
+          
+          console.log('Rollout successful:', result, pushResults);
           
           // Reset form
-          setTimeout(() => {
-            form.reset();
-            document.getElementById('destination-preview').style.display = 'none';
-          }, 500);
+          if (pushSuccess) {
+            setTimeout(() => {
+              form.reset();
+              document.getElementById('destination-preview').style.display = 'none';
+            }, 500);
+          }
         } else {
           showResults({
             title: 'Copy Failed',
