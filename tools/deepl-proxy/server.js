@@ -93,63 +93,80 @@ function restorePatterns(text, matches) {
 // Prepare HTML for translation by wrapping section-metadata in a special tag
 function prepareHTMLForTranslation(html) {
   // Wrap section-metadata elements in <notranslate> tags
-  // This uses a simple approach: find elements with class containing "section-metadata"
+  // This uses a more robust approach to handle various HTML formats
   let prepared = html;
+  let wrappedCount = 0;
   
-  // Find and wrap section-metadata blocks
-  // Match opening tag with section-metadata class, capture until matching closing tag
-  // This handles most common cases (div, section, aside elements)
-  const tagPattern = /<(div|section|aside)[^>]*class="[^"]*section-metadata[^"]*"[^>]*>/gi;
+  // First, find all opening tags with section-metadata class
+  // Match various formats: class="section-metadata", class='section-metadata', class=section-metadata
+  const openTagPattern = /<([a-z]+)[^>]*class\s*=\s*["']?[^"'>]*section-metadata[^"'>]*["']?[^>]*>/gi;
   
-  let match;
   const matches = [];
+  let match;
   
   // Find all opening tags
-  while ((match = tagPattern.exec(html)) !== null) {
+  while ((match = openTagPattern.exec(html)) !== null) {
     matches.push({
       index: match.index,
-      tag: match[1],
+      tagName: match[1].toLowerCase(),
       fullMatch: match[0]
     });
   }
   
   // Process matches in reverse order to maintain indices
   for (let i = matches.length - 1; i >= 0; i--) {
-    const { index, tag, fullMatch } = matches[i];
-    const tagName = tag.toLowerCase();
+    const { index, tagName, fullMatch } = matches[i];
     
-    // Find the matching closing tag
+    // Skip if already wrapped
+    if (fullMatch.includes('notranslate')) continue;
+    
+    // Find the matching closing tag by counting nested tags
     let depth = 1;
     let pos = index + fullMatch.length;
-    let found = false;
+    let endIndex = -1;
     
     while (pos < prepared.length && depth > 0) {
-      const openTag = `<${tagName}`;
-      const closeTag = `</${tagName}>`;
+      const openPattern = new RegExp(`<${tagName}[^>]*>`, 'gi');
+      const closePattern = new RegExp(`</${tagName}>`, 'gi');
       
-      const nextOpen = prepared.indexOf(openTag, pos);
-      const nextClose = prepared.indexOf(closeTag, pos);
+      openPattern.lastIndex = pos;
+      closePattern.lastIndex = pos;
       
-      if (nextClose === -1) break;
+      const nextOpen = openPattern.exec(prepared);
+      const nextClose = closePattern.exec(prepared);
       
-      if (nextOpen !== -1 && nextOpen < nextClose) {
+      if (!nextClose) break;
+      
+      const openPos = nextOpen ? nextOpen.index : Infinity;
+      const closePos = nextClose.index;
+      
+      if (openPos < closePos) {
         depth++;
-        pos = nextOpen + openTag.length;
+        pos = openPos + nextOpen[0].length;
       } else {
         depth--;
         if (depth === 0) {
-          // Found matching closing tag
-          const endPos = nextClose + closeTag.length;
-          const block = prepared.substring(index, endPos);
-          prepared = prepared.substring(0, index) + 
-                    `<notranslate>${block}</notranslate>` + 
-                    prepared.substring(endPos);
-          found = true;
+          endIndex = closePos + nextClose[0].length;
           break;
         }
-        pos = nextClose + closeTag.length;
+        pos = closePos + nextClose[0].length;
       }
     }
+    
+    if (endIndex > 0) {
+      // Wrap the entire block
+      const block = prepared.substring(index, endIndex);
+      prepared = prepared.substring(0, index) + 
+                `<notranslate>${block}</notranslate>` + 
+                prepared.substring(endIndex);
+      wrappedCount++;
+    }
+  }
+  
+  if (wrappedCount > 0) {
+    console.log(`  Wrapped ${wrappedCount} section-metadata block(s) in <notranslate> tags`);
+  } else {
+    console.log(`  Warning: No section-metadata blocks found to wrap`);
   }
   
   return prepared;
@@ -188,9 +205,18 @@ function translateText(text, sourceLang, targetLang, options = {}) {
     if (isHTML) {
       formData.append('tag_handling', 'html');
       // Ignore script, style, and notranslate tags (which wrap section-metadata)
+      // DeepL will not translate content inside these tags
       formData.append('ignore_tags', 'script,style,notranslate');
       // Use outline_detection for better HTML handling
       formData.append('outline_detection', '1');
+      // Preserve formatting
+      formData.append('preserve_formatting', '1');
+      
+      // Log if we have notranslate tags in the prepared text
+      if (preservedText.includes('<notranslate>')) {
+        const notranslateCount = (preservedText.match(/<notranslate>/gi) || []).length;
+        console.log(`  Sending HTML with ${notranslateCount} notranslate block(s) to DeepL`);
+      }
     }
 
     const postData = formData.toString();
