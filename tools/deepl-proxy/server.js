@@ -98,13 +98,17 @@ function restorePatterns(text, matches) {
   let restoredText = text;
   let totalRestored = 0;
   
-  // Restore patterns - try multiple strategies
-  matches.forEach(({ placeholder, original, index }) => {
+  // Restore patterns in reverse order to avoid conflicts
+  // This ensures that higher-index patterns are restored first
+  const reversedMatches = [...matches].reverse();
+  
+  reversedMatches.forEach(({ placeholder, original, index }) => {
     let found = false;
     let restoredCount = 0;
     
-    // Strategy 1: Try exact placeholder match
-    const exactRegex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+    // Strategy 1: Try exact placeholder match (most specific)
+    const exactEscaped = placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const exactRegex = new RegExp(exactEscaped, 'g');
     const exactMatches = restoredText.match(exactRegex);
     
     if (exactMatches && exactMatches.length > 0) {
@@ -125,14 +129,16 @@ function restorePatterns(text, matches) {
         placeholder.replace(/_/g, ' '),
         // Without brackets
         placeholder.replace(/^\[|\]$/g, ''),
-        // Pattern with just the original (in case DeepL kept the pattern but removed the wrapper)
+        // Pattern variations
         `PATTERN_${index}:${original}`,
         `[PATTERN${index}:${original}]`,
         `(PATTERN_${index}:${original})`,
+        `{PATTERN_${index}:${original}}`,
       ];
       
       for (const variation of variations) {
-        const varRegex = new RegExp(variation.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+        const varEscaped = variation.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const varRegex = new RegExp(varEscaped, 'gi');
         const varMatches = restoredText.match(varRegex);
         if (varMatches && varMatches.length > 0) {
           restoredText = restoredText.replace(varRegex, original);
@@ -143,24 +149,28 @@ function restorePatterns(text, matches) {
         }
       }
       
-      // Strategy 3: Search for the pattern itself (in case DeepL kept it but modified the wrapper)
-      // This is a fallback - search for patterns that look like our placeholders
+      // Strategy 3: Search for pattern with specific index and original pattern
+      // This is more specific than Strategy 4 and avoids conflicts
       if (!found) {
-        const patternSearch = new RegExp(`\\[?PATTERN[_\\s]*${index}[_\\s]*:${original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\]?`, 'gi');
+        // Escape the original pattern for regex
+        const escapedOriginal = original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Look for PATTERN_index:original with optional brackets
+        const patternSearch = new RegExp(`\\[?PATTERN[_\\s]*${index}[_\\s]*:${escapedOriginal}\\]?`, 'gi');
         const patternMatches = restoredText.match(patternSearch);
         if (patternMatches && patternMatches.length > 0) {
           restoredText = restoredText.replace(patternSearch, original);
           restoredCount = patternMatches.length;
-          console.log(`  Restored ${restoredCount} occurrence(s) of ${original} using pattern search`);
+          console.log(`  Restored ${restoredCount} occurrence(s) of ${original} using pattern search (index ${index})`);
           found = true;
         }
       }
       
-      // Strategy 4: Search for just the pattern with any wrapper (most flexible)
-      // This catches cases where DeepL modified the wrapper but kept the pattern
+      // Strategy 4: Most flexible - search for any wrapper around the specific pattern
+      // Only use this as last resort since it's less specific
       if (!found) {
-        // Look for the pattern with any kind of bracket or wrapper around it
-        const flexiblePattern = new RegExp(`[\\[\\{\\(]?PATTERN[_\\s]*${index}[_\\s]*:${original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\]\\}\\)]?`, 'gi');
+        const escapedOriginal = original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Look for the pattern with any kind of bracket or wrapper, but must include the index
+        const flexiblePattern = new RegExp(`[\\[\\{\\(]?PATTERN[_\\s]*${index}[_\\s]*:${escapedOriginal}[\\]\\}\\)]?`, 'gi');
         const flexibleMatches = restoredText.match(flexiblePattern);
         if (flexibleMatches && flexibleMatches.length > 0) {
           restoredText = restoredText.replace(flexiblePattern, original);
@@ -174,11 +184,16 @@ function restorePatterns(text, matches) {
     if (found) {
       totalRestored += restoredCount;
     } else {
-      console.warn(`  Could not restore pattern: ${original} (placeholder: ${placeholder})`);
+      console.warn(`  Could not restore pattern: ${original} (placeholder: ${placeholder}, index: ${index})`);
       // Log a sample of the text to help debug
       const sample = restoredText.substring(0, 1000);
+      // Check for any PATTERN mentions or the original pattern
       if (sample.includes('PATTERN') || sample.includes(original)) {
         console.warn(`  Found pattern-related text in sample:`, sample);
+        // Also check for the specific index
+        if (sample.includes(`PATTERN${index}`) || sample.includes(`PATTERN_${index}`)) {
+          console.warn(`  Found PATTERN${index} in sample - placeholder may have been modified`);
+        }
       }
     }
   });
