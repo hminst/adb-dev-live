@@ -67,6 +67,138 @@ function mapToDeepLCode(langCode) {
   return LANGUAGE_MAP[langCode] || langCode.toUpperCase();
 }
 
+// Preserve icon HTML elements (e.g., <span class="icon icon-logo"></span>) from translation
+// This prevents DeepL from reordering or modifying icon elements
+function preserveIconElements(html) {
+  const iconElements = [];
+  let preservedHtml = html;
+  let index = 0;
+  
+  // Pattern 1: Match self-closing icon tags: <span class="icon icon-logo" />
+  const selfClosingPattern = /<([a-z]+)([^>]*class\s*=\s*["']?[^"'>]*\bicon\b[^"'>]*["']?[^>]*?)\s*\/\s*>/gi;
+  
+  preservedHtml = preservedHtml.replace(selfClosingPattern, (match, tagName, attributes) => {
+    // Skip if this is a section-metadata element
+    if (/class\s*=\s*["']?[^"'>]*section-metadata[^"'>]*["']?/i.test(attributes)) {
+      return match;
+    }
+    
+    const placeholder = `ICONELEMENT${String(index).padStart(3, '0')}`;
+    
+    iconElements.push({
+      placeholder,
+      original: match,
+      tagName,
+      attributes,
+      content: '',
+      isSelfClosing: true,
+      index,
+    });
+    
+    index++;
+    return placeholder;
+  });
+  
+  // Pattern 2: Match paired icon tags: <span class="icon icon-logo">content</span>
+  // We need to match the opening tag and find the corresponding closing tag
+  const openingTagPattern = /<([a-z]+)([^>]*class\s*=\s*["']?[^"'>]*\bicon\b[^"'>]*["']?[^>]*?)>/gi;
+  const matches = [];
+  
+  // First pass: find all opening tags
+  let match;
+  while ((match = openingTagPattern.exec(preservedHtml)) !== null) {
+    const tagName = match[1];
+    const attributes = match[2];
+    const startPos = match.index;
+    const fullOpeningTag = match[0];
+    
+    // Skip if this is a section-metadata element
+    if (/class\s*=\s*["']?[^"'>]*section-metadata[^"'>]*["']?/i.test(attributes)) {
+      continue;
+    }
+    
+    // Find the corresponding closing tag
+    const closingTag = `</${tagName}>`;
+    const afterOpening = preservedHtml.substring(startPos + fullOpeningTag.length);
+    const closingPos = afterOpening.indexOf(closingTag);
+    
+    if (closingPos !== -1) {
+      const content = afterOpening.substring(0, closingPos);
+      const fullElement = preservedHtml.substring(startPos, startPos + fullOpeningTag.length + content.length + closingTag.length);
+      
+      matches.push({
+        fullElement,
+        startPos,
+        tagName,
+        attributes,
+        content,
+        index: index++,
+      });
+    }
+  }
+  
+  // Replace matches in reverse order to preserve positions
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const { fullElement, tagName, attributes, content, index: idx } = matches[i];
+    const placeholder = `ICONELEMENT${String(idx).padStart(3, '0')}`;
+    
+    iconElements.push({
+      placeholder,
+      original: fullElement,
+      tagName,
+      attributes,
+      content,
+      isSelfClosing: false,
+      index: idx,
+    });
+    
+    preservedHtml = preservedHtml.substring(0, matches[i].startPos) +
+                    placeholder +
+                    preservedHtml.substring(matches[i].startPos + fullElement.length);
+  }
+  
+  if (iconElements.length > 0) {
+    console.log(`  Preserving ${iconElements.length} icon element(s) as placeholders`);
+    iconElements.forEach(({ placeholder, tagName }) => {
+      console.log(`    ${placeholder} -> <${tagName} class="icon...">`);
+    });
+  }
+  
+  return { preservedHtml, iconElements };
+}
+
+// Restore icon elements after translation
+function restoreIconElements(html, iconElements) {
+  let restoredHtml = html;
+  let totalRestored = 0;
+  
+  // Restore in reverse order to avoid conflicts
+  const reversedElements = [...iconElements].reverse();
+  
+  reversedElements.forEach(({ placeholder, original, index }) => {
+    // Try exact placeholder match first
+    const exactEscaped = placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const exactRegex = new RegExp(exactEscaped, 'g');
+    const exactMatches = restoredHtml.match(exactRegex);
+    
+    if (exactMatches && exactMatches.length > 0) {
+      restoredHtml = restoredHtml.replace(exactRegex, original);
+      totalRestored += exactMatches.length;
+      console.log(`  ✓ Restored ${exactMatches.length} icon element(s) using placeholder ${placeholder}`);
+    } else {
+      console.warn(`  ✗ Could not restore icon element: ${placeholder}`);
+    }
+  });
+  
+  if (totalRestored > 0) {
+    console.log(`  ✓ Total icon elements restored: ${totalRestored}`);
+  } else if (iconElements.length > 0) {
+    console.warn(`  ✗ Warning: Could not restore any of ${iconElements.length} icon element(s).`);
+  }
+  
+  return restoredHtml;
+}
+
 // Preserve special patterns like :logo:, :toggle:, :globe: from translation
 function preservePatterns(text) {
   const pattern = /:\w+:/g;
@@ -250,43 +382,11 @@ function prepareHTMLForTranslation(html) {
     }
   });
   
-  // Find all opening tags with icon class (e.g., class="icon icon-logo")
-  // This prevents DeepL from moving icon elements during translation
-  const iconPattern = /<([a-z]+)([^>]*class\s*=\s*["']?[^"'>]*\bicon\b[^"'>]*["']?[^>]*)>/gi;
-  let iconCount = 0;
+  // Note: Icon elements are preserved using placeholders (see preserveIconElements)
+  // This is more robust than translate="no" as it completely prevents DeepL from touching them
   
-  // Replace opening tags to add translate="no" attribute
-  prepared = prepared.replace(iconPattern, (match, tagName, attributes) => {
-    // Skip if translate="no" is already present
-    if (/translate\s*=\s*["']?no["']?/i.test(attributes)) {
-      return match;
-    }
-    
-    // Skip if this is a section-metadata element (already handled above)
-    if (/class\s*=\s*["']?[^"'>]*section-metadata[^"'>]*["']?/i.test(attributes)) {
-      return match;
-    }
-    
-    iconCount++;
-    // Check if it's a self-closing tag
-    const isSelfClosing = attributes.trim().endsWith('/');
-    // Remove trailing / if present and trim
-    const cleanAttributes = isSelfClosing 
-      ? attributes.trim().slice(0, -1).trim() 
-      : attributes.trim();
-    
-    // Add translate="no" attribute
-    // If there are existing attributes, add a space before translate="no"
-    if (cleanAttributes) {
-      return `<${tagName} ${cleanAttributes} translate="no"${isSelfClosing ? ' /' : ''}>`;
-    } else {
-      // No other attributes, just add translate="no"
-      return `<${tagName} translate="no"${isSelfClosing ? ' /' : ''}>`;
-    }
-  });
-  
-  if (modifiedCount > 0 || iconCount > 0) {
-    console.log(`  Added translate="no" to ${modifiedCount} section-metadata element(s) and ${iconCount} icon element(s)`);
+  if (modifiedCount > 0) {
+    console.log(`  Added translate="no" to ${modifiedCount} section-metadata element(s)`);
   }
   
   return prepared;
@@ -301,6 +401,14 @@ function translateText(text, sourceLang, targetLang, options = {}) {
     // Prepare HTML if needed
     if (isHTML) {
       textToTranslate = prepareHTMLForTranslation(text);
+    }
+    
+    // Preserve icon elements before translation (prevents DeepL from reordering them)
+    let iconElements = [];
+    if (isHTML) {
+      const iconResult = preserveIconElements(textToTranslate);
+      textToTranslate = iconResult.preservedHtml;
+      iconElements = iconResult.iconElements;
     }
     
     // Preserve special patterns before translation
@@ -369,6 +477,11 @@ function translateText(text, sourceLang, targetLang, options = {}) {
             
             // Restore preserved patterns in the translated text
             translatedText = restorePatterns(translatedText, matches);
+            
+            // Restore icon elements after restoring patterns
+            if (isHTML && iconElements.length > 0) {
+              translatedText = restoreIconElements(translatedText, iconElements);
+            }
             
             resolve({
               success: true,
