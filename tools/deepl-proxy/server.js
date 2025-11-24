@@ -196,7 +196,7 @@ function translateText(text, sourceLang, targetLang, options = {}) {
     const postData = formData.toString();
     const url = new URL(DEEPL_API_URL);
 
-    const options = {
+    const requestOptions = {
       hostname: url.hostname,
       port: 443,
       path: url.pathname,
@@ -207,7 +207,7 @@ function translateText(text, sourceLang, targetLang, options = {}) {
       },
     };
 
-    const req = https.request(options, (res) => {
+    const req = https.request(requestOptions, (res) => {
       let data = '';
 
       res.on('data', (chunk) => {
