@@ -26,10 +26,14 @@ export function preserveIconElements(html) {
       return match;
     }
     
+    // Wrap placeholder in XML-style tags that DeepL will ignore
+    // Using a custom tag name that DeepL won't translate
     const placeholder = `ICONELEMENT${String(index).padStart(3, '0')}`;
+    const wrappedPlaceholder = `<notranslate data-icon="${placeholder}"></notranslate>`;
     
     iconElements.push({
       placeholder,
+      wrappedPlaceholder,
       original: match,
       tagName,
       attributes,
@@ -39,7 +43,7 @@ export function preserveIconElements(html) {
     });
     
     index++;
-    return placeholder;
+    return wrappedPlaceholder;
   });
   
   // Pattern 2: Match paired icon tags: <span class="icon icon-logo">content</span>
@@ -83,10 +87,13 @@ export function preserveIconElements(html) {
   // Replace matches in reverse order to preserve positions
   for (let i = matches.length - 1; i >= 0; i--) {
     const { fullElement, tagName, attributes, content, index: idx } = matches[i];
+    // Wrap placeholder in XML-style tags that DeepL will ignore
     const placeholder = `ICONELEMENT${String(idx).padStart(3, '0')}`;
+    const wrappedPlaceholder = `<notranslate data-icon="${placeholder}"></notranslate>`;
     
     iconElements.push({
       placeholder,
+      wrappedPlaceholder,
       original: fullElement,
       tagName,
       attributes,
@@ -96,7 +103,7 @@ export function preserveIconElements(html) {
     });
     
     preservedHtml = preservedHtml.substring(0, matches[i].startPos) +
-                    placeholder +
+                    wrappedPlaceholder +
                     preservedHtml.substring(matches[i].startPos + fullElement.length);
   }
   
@@ -123,18 +130,31 @@ export function restoreIconElements(html, iconElements) {
   // Restore in reverse order to avoid conflicts
   const reversedElements = [...iconElements].reverse();
   
-  reversedElements.forEach(({ placeholder, original, index }) => {
-    // Try exact placeholder match first
-    const exactEscaped = placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const exactRegex = new RegExp(exactEscaped, 'g');
-    const exactMatches = restoredHtml.match(exactRegex);
+  reversedElements.forEach(({ placeholder, wrappedPlaceholder, original, index }) => {
+    // First try to find the wrapped placeholder (XML tag)
+    const wrappedPattern = new RegExp(
+      `<notranslate\\s+data-icon="${placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"></notranslate>`,
+      'gi'
+    );
+    const wrappedMatches = restoredHtml.match(wrappedPattern);
     
-    if (exactMatches && exactMatches.length > 0) {
-      restoredHtml = restoredHtml.replace(exactRegex, original);
-      totalRestored += exactMatches.length;
-      console.log(`  ✓ Restored ${exactMatches.length} icon element(s) using placeholder ${placeholder}`);
+    if (wrappedMatches && wrappedMatches.length > 0) {
+      restoredHtml = restoredHtml.replace(wrappedPattern, original);
+      totalRestored += wrappedMatches.length;
+      console.log(`  ✓ Restored ${wrappedMatches.length} icon element(s) using wrapped placeholder ${placeholder}`);
     } else {
-      console.warn(`  ✗ Could not restore icon element: ${placeholder}`);
+      // Fallback: try unwrapped placeholder (in case DeepL removed the wrapper)
+      const exactEscaped = placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const exactRegex = new RegExp(exactEscaped, 'g');
+      const exactMatches = restoredHtml.match(exactRegex);
+      
+      if (exactMatches && exactMatches.length > 0) {
+        restoredHtml = restoredHtml.replace(exactRegex, original);
+        totalRestored += exactMatches.length;
+        console.log(`  ✓ Restored ${exactMatches.length} icon element(s) using unwrapped placeholder ${placeholder}`);
+      } else {
+        console.warn(`  ✗ Could not restore icon element: ${placeholder}`);
+      }
     }
   });
   

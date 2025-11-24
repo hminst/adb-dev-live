@@ -300,7 +300,8 @@ function translateText(text, sourceLang, targetLang, options = {}) {
       formData.append('tag_handling', 'html');
       // Ignore script and style tags
       // DeepL will respect translate="no" attribute automatically (per their docs)
-      formData.append('ignore_tags', 'script,style');
+      // Ignore script, style, and our notranslate tags
+      formData.append('ignore_tags', 'script,style,notranslate');
       // Use outline_detection for better HTML handling
       formData.append('outline_detection', '1');
       // Preserve formatting
