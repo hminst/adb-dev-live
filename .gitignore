@@ -9,3 +9,7 @@ helix-importer-ui
 .idea
 .wrangler
 .playwright-mcp/
+
+# Environment variables
+.env
+tools/deepl-proxy/.env

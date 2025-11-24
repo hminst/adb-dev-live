@@ -8,22 +8,37 @@
  * 
  * Usage: node server.js [API_KEY]
  * Or set DEEPL_API_KEY environment variable
+ * Or create a .env file with DEEPL_API_KEY=your_key
  */
 
 import http from 'http';
 import https from 'https';
 import { URL } from 'url';
+import { config } from 'dotenv';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
+
+// Load .env file from the same directory as this script
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+config({ path: join(__dirname, '.env') });
 
 const PORT = 3001;
 const DEEPL_API_URL = 'https://api-free.deepl.com/v2/translate';
 
-// Get API key from command line argument or environment variable
-const API_KEY = process.argv[2] || process.env.DEEPL_API_KEY || 'cd122b52-2feb-45f2-ae4e-7f3a01b1dab3:fx';
+// Get API key from command line argument, environment variable, or .env file
+// Priority: command line > environment variable > .env file
+const API_KEY = process.argv[2] || process.env.DEEPL_API_KEY;
 
 if (!API_KEY) {
   console.error('Error: DeepL API key not provided');
-  console.error('Usage: node server.js [API_KEY]');
-  console.error('Or set DEEPL_API_KEY environment variable');
+  console.error('');
+  console.error('Please provide the API key in one of these ways:');
+  console.error('  1. Command line: node server.js YOUR_API_KEY');
+  console.error('  2. Environment variable: export DEEPL_API_KEY=YOUR_API_KEY');
+  console.error('  3. .env file: Create .env file with DEEPL_API_KEY=YOUR_API_KEY');
+  console.error('');
+  console.error('Get a free API key at: https://www.deepl.com/pro-api');
   process.exit(1);
 }
 

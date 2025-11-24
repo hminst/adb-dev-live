@@ -5,10 +5,11 @@ A local proxy server for DeepL translation API that keeps your API key secure on
 ## Features
 
 - **Secure**: API key never exposed to the client
-- **Simple**: Pure Node.js, no external dependencies
+- **Simple**: Pure Node.js with minimal dependencies (dotenv)
 - **CORS-enabled**: Works with browser-based applications
 - **Graceful shutdown**: Handles SIGTERM and SIGINT signals
 - **Pattern preservation**: Automatically preserves `:word:` patterns (like `:logo:`, `:toggle:`, `:globe:`) from translation
+- **Environment-based config**: Supports .env file for easy configuration
 
 ## Setup
 
@@ -16,29 +17,50 @@ A local proxy server for DeepL translation API that keeps your API key secure on
 
 Get a free API key from [DeepL Pro API](https://www.deepl.com/pro-api). The free tier includes 500,000 characters per month.
 
-### 2. Start the Proxy Server
+### 2. Install Dependencies
 
-You can provide the API key in three ways:
+```bash
+npm install
+```
 
-**Option 1: Command line argument**
+### 3. Configure API Key
+
+You can provide the API key in one of these ways (in order of priority):
+
+**Option 1: .env file (Recommended)**
+```bash
+# Copy the example file
+cp .env.example .env
+
+# Edit .env and add your API key
+# DEEPL_API_KEY=your_actual_api_key_here
+```
+
+**Option 2: Command line argument**
 ```bash
 node server.js YOUR_DEEPL_API_KEY
 ```
 
-**Option 2: Environment variable**
+**Option 3: Environment variable**
 ```bash
 export DEEPL_API_KEY=YOUR_DEEPL_API_KEY
 node server.js
 ```
 
-**Option 3: NPM script with environment variable**
+**Option 4: NPM script with environment variable**
 ```bash
 DEEPL_API_KEY=YOUR_DEEPL_API_KEY npm start
 ```
 
+### 4. Start the Proxy Server
+
+```bash
+npm start
+```
+
 **Development mode with auto-reload (Node 18+)**
 ```bash
-DEEPL_API_KEY=YOUR_DEEPL_API_KEY npm run dev
+npm run dev
 ```
 
 The server will start on `http://localhost:3001`.
