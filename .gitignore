@@ -13,3 +13,4 @@ helix-importer-ui
 # Environment variables
 .env
 tools/deepl-proxy/.env
+tools/deepl-proxy/.dev.vars
