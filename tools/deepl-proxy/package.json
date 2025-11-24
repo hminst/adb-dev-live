@@ -1,7 +1,7 @@
 {
   "name": "deepl-proxy",
   "version": "1.0.0",
-  "description": "Local proxy server for DeepL translation API",
+  "description": "DeepL translation proxy - Node.js server and Cloudflare Worker",
   "type": "module",
   "main": "server.js",
   "scripts": {
@@ -9,17 +9,25 @@
     "dev": "node --watch server.js",
     "test": "node icon-preservation.test.js",
     "test:verify": "node icon-position-verification.test.js",
-    "test:all": "npm test && npm run test:verify"
+    "test:all": "npm test && npm run test:verify",
+    "worker:dev": "wrangler dev",
+    "worker:deploy": "wrangler deploy",
+    "worker:deploy:staging": "wrangler deploy --env staging"
   },
   "keywords": [
     "deepl",
     "translation",
-    "proxy"
+    "proxy",
+    "cloudflare",
+    "worker"
   ],
   "author": "",
   "license": "MIT",
   "dependencies": {
     "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "wrangler": "^3.0.0"
   }
 }
 

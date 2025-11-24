@@ -1,15 +1,16 @@
 # DeepL Translation Proxy
 
-A local proxy server for DeepL translation API that keeps your API key secure on the server side.
+A proxy for DeepL translation API that keeps your API key secure. Available as both a Node.js server (for local development) and a Cloudflare Worker (for production deployment).
 
 ## Features
 
 - **Secure**: API key never exposed to the client
-- **Simple**: Pure Node.js with minimal dependencies (dotenv)
+- **Dual deployment**: Run locally with Node.js or deploy to Cloudflare Workers
 - **CORS-enabled**: Works with browser-based applications
-- **Graceful shutdown**: Handles SIGTERM and SIGINT signals
 - **Pattern preservation**: Automatically preserves `:word:` patterns (like `:logo:`, `:toggle:`, `:globe:`) from translation
-- **Environment-based config**: Supports .env file for easy configuration
+- **Icon preservation**: Preserves icon HTML elements in correct positions during translation
+- **HTML structure protection**: Prevents DeepL from modifying HTML structure
+- **Environment-based config**: Supports .env file (Node.js) or Cloudflare secrets (Workers)
 
 ## Setup
 
@@ -23,7 +24,11 @@ Get a free API key from [DeepL Pro API](https://www.deepl.com/pro-api). The free
 npm install
 ```
 
-### 3. Configure API Key
+## Deployment Options
+
+### Option A: Local Node.js Server (Development)
+
+#### Configure API Key
 
 You can provide the API key in one of these ways (in order of priority):
 
@@ -47,12 +52,7 @@ export DEEPL_API_KEY=YOUR_DEEPL_API_KEY
 node server.js
 ```
 
-**Option 4: NPM script with environment variable**
-```bash
-DEEPL_API_KEY=YOUR_DEEPL_API_KEY npm start
-```
-
-### 4. Start the Proxy Server
+#### Start the Server
 
 ```bash
 npm start
@@ -65,11 +65,69 @@ npm run dev
 
 The server will start on `http://localhost:3001`.
 
+### Option B: Cloudflare Worker (Production)
+
+#### Prerequisites
+
+1. Install dependencies (includes Wrangler):
+```bash
+npm install
+```
+
+2. Authenticate with Cloudflare:
+```bash
+npx wrangler login
+```
+
+#### Configure API Key
+
+Set the API key as a Cloudflare Worker secret:
+
+```bash
+npx wrangler secret put DEEPL_API_KEY
+# Enter your DeepL API key when prompted
+```
+
+For local development, create a `.dev.vars` file:
+```bash
+# .dev.vars
+DEEPL_API_KEY=your_api_key_here
+```
+
+#### Deploy
+
+**Deploy to production:**
+```bash
+npm run worker:deploy
+```
+
+**Deploy to staging:**
+```bash
+npm run worker:deploy:staging
+```
+
+**Local development:**
+```bash
+npm run worker:dev
+```
+
+The worker will be available at a URL like: `https://deepl-proxy.your-subdomain.workers.dev`
+
+#### Update Worker URL
+
+After deployment, update the language-rollout tool to use the Cloudflare Worker URL instead of `http://localhost:3001`:
+
+```javascript
+// In language-rollout.js, update the proxy URL:
+const url = 'https://deepl-proxy.your-subdomain.workers.dev';
+```
+
 ## API Usage
 
 ### Endpoint
 
-`POST http://localhost:3001/`
+**Node.js server:** `POST http://localhost:3001/`  
+**Cloudflare Worker:** `POST https://your-worker-url.workers.dev/`
 
 ### Request Body
 
@@ -77,13 +135,15 @@ The server will start on `http://localhost:3001`.
 {
   "text": "Hello, world!",
   "source": "en",
-  "target": "de"
+  "target": "de",
+  "isHTML": false
 }
 ```
 
 - `text` (required): The text to translate
 - `target` (required): Target language code (e.g., "de", "fr", "es")
 - `source` (optional): Source language code, defaults to "en"
+- `isHTML` (optional): Set to `true` for HTML content (preserves structure and icons)
 
 ### Response
 
@@ -151,10 +211,13 @@ The language rollout tool automatically uses this proxy when it's running. Make 
 
 ## Security Notes
 
-- The proxy should only be run locally for development
-- For production use, deploy behind proper authentication/authorization
-- Consider adding rate limiting for production deployments
+- **Node.js server**: Should only be run locally for development
+- **Cloudflare Worker**: Suitable for production, but consider adding:
+  - Authentication/authorization (API keys, tokens)
+  - Rate limiting
+  - IP allowlisting if needed
 - Never commit your API key to version control
+- Use Cloudflare Workers secrets for API keys in production
 
 ## Troubleshooting
 

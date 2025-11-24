@@ -1,0 +1,6 @@
+# Cloudflare Workers Local Development Environment Variables
+# Copy this file to .dev.vars and add your actual API key
+# .dev.vars is automatically ignored by git
+
+DEEPL_API_KEY=your_deepl_api_key_here
+

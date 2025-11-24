@@ -43,7 +43,7 @@ async function translateText(text, targetLang) {
     const sourceLang = 'en'; // Assume source is English
     
     // Use local proxy server
-    const url = 'http://localhost:3001';
+    const url = 'https://deepl-proxy.h-minst.workers.dev';
     
     const response = await fetch(url, {
       method: 'POST',

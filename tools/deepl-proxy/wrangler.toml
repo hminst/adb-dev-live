@@ -1,0 +1,20 @@
+name = "deepl-proxy"
+main = "worker.js"
+compatibility_date = "2024-01-01"
+
+# Environment variables
+# Set DEEPL_API_KEY in Cloudflare Dashboard or via wrangler secret put
+# For local development, create a .dev.vars file:
+# DEEPL_API_KEY=your_api_key_here
+
+[env.production]
+name = "deepl-proxy"
+
+[env.staging]
+name = "deepl-proxy-staging"
+
+# Uncomment to use a custom route
+# routes = [
+#   { pattern = "deepl-proxy.yourdomain.com/*", zone_name = "yourdomain.com" }
+# ]
+
