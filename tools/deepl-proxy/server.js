@@ -250,10 +250,43 @@ function prepareHTMLForTranslation(html) {
     }
   });
   
-  if (modifiedCount > 0) {
-    console.log(`  Added translate="no" to ${modifiedCount} section-metadata element(s)`);
-  } else {
-    console.log(`  Warning: No section-metadata elements found to modify`);
+  // Find all opening tags with icon class (e.g., class="icon icon-logo")
+  // This prevents DeepL from moving icon elements during translation
+  const iconPattern = /<([a-z]+)([^>]*class\s*=\s*["']?[^"'>]*\bicon\b[^"'>]*["']?[^>]*)>/gi;
+  let iconCount = 0;
+  
+  // Replace opening tags to add translate="no" attribute
+  prepared = prepared.replace(iconPattern, (match, tagName, attributes) => {
+    // Skip if translate="no" is already present
+    if (/translate\s*=\s*["']?no["']?/i.test(attributes)) {
+      return match;
+    }
+    
+    // Skip if this is a section-metadata element (already handled above)
+    if (/class\s*=\s*["']?[^"'>]*section-metadata[^"'>]*["']?/i.test(attributes)) {
+      return match;
+    }
+    
+    iconCount++;
+    // Check if it's a self-closing tag
+    const isSelfClosing = attributes.trim().endsWith('/');
+    // Remove trailing / if present and trim
+    const cleanAttributes = isSelfClosing 
+      ? attributes.trim().slice(0, -1).trim() 
+      : attributes.trim();
+    
+    // Add translate="no" attribute
+    // If there are existing attributes, add a space before translate="no"
+    if (cleanAttributes) {
+      return `<${tagName} ${cleanAttributes} translate="no"${isSelfClosing ? ' /' : ''}>`;
+    } else {
+      // No other attributes, just add translate="no"
+      return `<${tagName} translate="no"${isSelfClosing ? ' /' : ''}>`;
+    }
+  });
+  
+  if (modifiedCount > 0 || iconCount > 0) {
+    console.log(`  Added translate="no" to ${modifiedCount} section-metadata element(s) and ${iconCount} icon element(s)`);
   }
   
   return prepared;
