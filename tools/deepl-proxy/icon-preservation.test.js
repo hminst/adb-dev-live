@@ -288,6 +288,114 @@ function testSpanishHeaderTranslation() {
 }
 
 /**
+ * Test Case 8: Verify exact position preservation
+ * Validates that icons maintain their exact structural position after translation
+ */
+function testExactPositionPreservation() {
+  console.log('\n=== Test 8: Exact position preservation ===');
+  
+  // Create HTML with known structure and positions
+  const originalHtml = '<div><p><a href="/"><span class="icon icon-logo"></span>Author Kit</a></p></div>';
+  
+  // Calculate relative positions in original HTML
+  const getIconContext = (html) => {
+    const iconMatch = html.match(/(<a[^>]*>)(.*?)(<\/a>)/);
+    if (!iconMatch) return null;
+    
+    const beforeIcon = iconMatch[2].substring(0, iconMatch[2].indexOf('<span class="icon'));
+    const afterIcon = iconMatch[2].substring(iconMatch[2].indexOf('</span>') + 7);
+    const iconElement = iconMatch[2].match(/<span class="icon[^>]*><\/span>/)?.[0];
+    
+    return {
+      openingTag: iconMatch[1],
+      beforeIcon,
+      iconElement,
+      afterIcon,
+      closingTag: iconMatch[3],
+    };
+  };
+  
+  const originalContext = getIconContext(originalHtml);
+  assert(originalContext !== null, 'Should be able to parse original HTML structure');
+  assert(originalContext.iconElement !== undefined, 'Should find icon element');
+  assert(originalContext.beforeIcon === '', 'Icon should be immediately after opening tag');
+  assert(originalContext.afterIcon === 'Author Kit', 'Text should be immediately after icon');
+  
+  // Preserve icons
+  const { preservedHtml, iconElements } = preserveIconElements(originalHtml);
+  
+  // Verify placeholder is in the same position
+  const preservedContext = getIconContext(preservedHtml);
+  assert(preservedContext !== null, 'Should be able to parse preserved HTML');
+  assert(preservedContext.beforeIcon === '', 'Placeholder should be in same position as icon');
+  assert(preservedHtml.includes('ICONELEMENT000'), 'Should contain placeholder');
+  
+  // Simulate translation - text changes but structure should remain
+  const translatedHtml = preservedHtml.replace('Author Kit', 'Kit de autor');
+  
+  // Restore icons
+  const restoredHtml = restoreIconElements(translatedHtml, iconElements);
+  
+  // Verify exact position is maintained
+  const restoredContext = getIconContext(restoredHtml);
+  assert(restoredContext !== null, 'Should be able to parse restored HTML');
+  assert(restoredContext.iconElement !== undefined, 'Icon should be restored');
+  assert(restoredContext.beforeIcon === '', 'Icon should be immediately after opening tag (same as original)');
+  assert(restoredContext.afterIcon === 'Kit de autor', 'Text should be immediately after icon (translated)');
+  
+  // Verify the exact structure matches original pattern
+  const originalPattern = /<a href="\/"><span class="icon icon-logo"><\/span>Author Kit<\/a>/;
+  const restoredPattern = /<a href="\/"><span class="icon icon-logo"><\/span>Kit de autor<\/a>/;
+  
+  assert(originalPattern.test(originalHtml), 'Original should match expected pattern');
+  assert(restoredPattern.test(restoredHtml), 'Restored should match expected pattern (with translated text)');
+  
+  // Calculate character positions to verify exact location
+  const originalIconStart = originalHtml.indexOf('<span class="icon icon-logo">');
+  const originalIconEnd = originalHtml.indexOf('</span>', originalIconStart) + 7;
+  const originalTextStart = originalIconEnd;
+  
+  const restoredIconStart = restoredHtml.indexOf('<span class="icon icon-logo">');
+  const restoredIconEnd = restoredHtml.indexOf('</span>', restoredIconStart) + 7;
+  const restoredTextStart = restoredIconEnd;
+  
+  // Verify relative positions are the same
+  const originalRelativePos = originalTextStart - originalIconStart;
+  const restoredRelativePos = restoredTextStart - restoredIconStart;
+  
+  assert(originalRelativePos === restoredRelativePos, 
+    `Icon-to-text distance should be the same: original=${originalRelativePos}, restored=${restoredRelativePos}`);
+  
+  // Verify icon is in the same structural position (same parent elements)
+  const originalBeforeIcon = originalHtml.substring(0, originalIconStart);
+  const restoredBeforeIcon = restoredHtml.substring(0, restoredIconStart);
+  
+  assert(originalBeforeIcon === restoredBeforeIcon, 
+    'HTML structure before icon should be identical');
+  
+  // Final verification: Compare the exact HTML structure
+  const originalLinkContent = originalHtml.match(/<a[^>]*>(.*?)<\/a>/)?.[1] || '';
+  const restoredLinkContent = restoredHtml.match(/<a[^>]*>(.*?)<\/a>/)?.[1] || '';
+  
+  // Extract just the icon and text parts (without the tags)
+  const originalParts = originalLinkContent.split(/(<span class="icon[^>]*><\/span>)/);
+  const restoredParts = restoredLinkContent.split(/(<span class="icon[^>]*><\/span>)/);
+  
+  // Verify structure: [beforeIcon, iconElement, afterIcon]
+  assert(originalParts.length === 3, 'Original should have icon element in middle');
+  assert(restoredParts.length === 3, 'Restored should have icon element in middle');
+  assert(originalParts[0] === restoredParts[0], 'Content before icon should be identical');
+  assert(originalParts[1] === restoredParts[1], 'Icon element should be identical');
+  // Parts[2] will differ (translated text), but structure is the same
+  
+  console.log('✓ Test 8 passed: Icon maintains exact position after translation');
+  console.log(`  Original structure: "${originalParts[0]}"[ICON]"${originalParts[2]}"`);
+  console.log(`  Restored structure: "${restoredParts[0]}"[ICON]"${restoredParts[2]}"`);
+  console.log(`  Icon position verified: ${originalIconStart === restoredIconStart ? 'IDENTICAL' : 'DIFFERENT'}`);
+  assert(originalIconStart === restoredIconStart, 'Icon must be at exact same character position');
+}
+
+/**
  * Run all tests
  */
 function runTests() {
@@ -304,6 +412,7 @@ function runTests() {
     testIconsWithContent,
     testSkipSectionMetadata,
     testSpanishHeaderTranslation,
+    testExactPositionPreservation,
   ];
   
   tests.forEach((test) => {
@@ -351,6 +460,7 @@ export {
   testIconsWithContent,
   testSkipSectionMetadata,
   testSpanishHeaderTranslation,
+  testExactPositionPreservation,
   runTests,
 };
 
