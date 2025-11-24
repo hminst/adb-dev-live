@@ -57,22 +57,37 @@ function preservePatterns(text) {
   const pattern = /:\w+:/g;
   const matches = [];
   let preservedText = text;
+  
+  // Find all unique :word: patterns
+  const uniquePatterns = new Set();
   let match;
   
-  // Find all :word: patterns
   while ((match = pattern.exec(text)) !== null) {
-    matches.push(match[0]);
+    uniquePatterns.add(match[0]);
   }
+  
+  // Create placeholders for each unique pattern
+  // Use a format that DeepL is less likely to modify: ZWSP (zero-width space) + pattern
+  // Actually, use a simple numeric placeholder that's less likely to be translated
+  const patternArray = Array.from(uniquePatterns);
+  
+  patternArray.forEach((originalPattern, index) => {
+    // Use a simple numeric placeholder format
+    const placeholder = `__PLACEHOLDER_${index}__`;
+    matches.push({ placeholder, original: originalPattern });
+  });
   
   // Log preserved patterns for debugging
   if (matches.length > 0) {
-    console.log(`  Preserving ${matches.length} pattern(s):`, matches.join(', '));
+    console.log(`  Preserving ${matches.length} unique pattern(s):`, matches.map(m => m.original).join(', '));
   }
   
-  // Replace each pattern with a unique placeholder
-  matches.forEach((match, index) => {
-    const placeholder = `___PRESERVE_${index}___`;
-    preservedText = preservedText.replace(match, placeholder);
+  // Replace all occurrences of each pattern with its placeholder (global replace)
+  matches.forEach(({ placeholder, original }) => {
+    // Escape special regex characters and use global flag
+    const escapedPattern = original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escapedPattern, 'g');
+    preservedText = preservedText.replace(regex, placeholder);
   });
   
   return { preservedText, matches };
@@ -81,11 +96,76 @@ function preservePatterns(text) {
 // Restore preserved patterns after translation
 function restorePatterns(text, matches) {
   let restoredText = text;
+  let totalRestored = 0;
   
-  matches.forEach((match, index) => {
-    const placeholder = `___PRESERVE_${index}___`;
-    restoredText = restoredText.replace(placeholder, match);
+  // Restore patterns - try original placeholder first, then variations
+  matches.forEach(({ placeholder, original }, index) => {
+    // Try the exact placeholder first
+    let found = false;
+    const exactRegex = new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g');
+    const exactMatches = restoredText.match(exactRegex);
+    
+    if (exactMatches && exactMatches.length > 0) {
+      restoredText = restoredText.replace(exactRegex, original);
+      totalRestored += exactMatches.length;
+      console.log(`  Restored ${exactMatches.length} occurrence(s) of ${original} using exact placeholder`);
+      found = true;
+    } else {
+      // Try variations in case DeepL modified the placeholder
+      const variations = [
+        placeholder.replace(/_/g, ' '), // Spaces instead of underscores
+        placeholder.replace(/_/g, ''), // No underscores
+        placeholder.toLowerCase(),
+        placeholder.toUpperCase(),
+        `__PLACEHOLDER${index}__`, // Without underscores in number
+        `PLACEHOLDER_${index}`, // Without leading/trailing underscores
+        `PLACEHOLDER${index}`, // Minimal format
+        // Handle cases where underscores might be removed or modified
+        placeholder.replace(/__/g, '_'), // Double to single underscore
+        placeholder.replace(/_/g, '\\u200B'), // Zero-width space (in case DeepL removed underscores)
+      ];
+      
+      for (const variation of variations) {
+        const varRegex = new RegExp(variation.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi');
+        const varMatches = restoredText.match(varRegex);
+        if (varMatches && varMatches.length > 0) {
+          restoredText = restoredText.replace(varRegex, original);
+          totalRestored += varMatches.length;
+          console.log(`  Restored ${varMatches.length} occurrence(s) of ${original} using variation: ${variation}`);
+          found = true;
+          break;
+        }
+      }
+      
+      // Last resort: search for partial matches (e.g., "PRESERVE_1" or "PLACEHOLDER_1")
+      if (!found) {
+        const partialPattern = new RegExp(`(?:PLACEHOLDER|PRESERVE)[_\\s]*${index}[_\\s]*`, 'gi');
+        const partialMatches = restoredText.match(partialPattern);
+        if (partialMatches && partialMatches.length > 0) {
+          restoredText = restoredText.replace(partialPattern, original);
+          totalRestored += partialMatches.length;
+          console.log(`  Restored ${partialMatches.length} occurrence(s) of ${original} using partial match`);
+          found = true;
+        }
+      }
+    }
+    
+    if (!found) {
+      console.warn(`  Could not restore pattern: ${original} (placeholder: ${placeholder})`);
+      // Log a sample of the text to help debug
+      const sample = restoredText.substring(0, 500);
+      if (sample.includes('PLACEHOLDER') || sample.includes('PRESERVE')) {
+        console.warn(`  Found placeholder-like text in sample:`, sample);
+      }
+    }
   });
+  
+  if (totalRestored > 0) {
+    console.log(`  Total patterns restored: ${totalRestored}`);
+  } else if (matches.length > 0) {
+    console.warn(`  Warning: Could not restore any of ${matches.length} pattern(s).`);
+    console.warn(`  Sample of translated text (first 500 chars):`, restoredText.substring(0, 500));
+  }
   
   return restoredText;
 }
