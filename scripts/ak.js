@@ -296,6 +296,11 @@ export async function loadArea({ area } = { area: document }) {
     loadIcons(section);
     await Promise.all(section.widgets.map((block) => loadBlock(block)));
     await Promise.all(section.blocks.map((block) => loadBlock(block)));
+    
+    // Process icon placeholders (e.g., :logo:, :toggle:) in all blocks
+    const iconPlaceholders = await import('./utils/icon-placeholders.js');
+    iconPlaceholders.processIconPlaceholdersInBlocks(section);
+    
     delete section.dataset.status;
     if (isDoc && idx === 0) import('./postlcp.js');
   }
