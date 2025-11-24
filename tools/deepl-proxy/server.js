@@ -90,95 +90,51 @@ function restorePatterns(text, matches) {
   return restoredText;
 }
 
-// Prepare HTML for translation by wrapping section-metadata in a special tag
+// Prepare HTML for translation by adding translate="no" to section-metadata elements
+// According to DeepL docs: https://developers.deepl.com/docs/xml-and-html-handling/html
 function prepareHTMLForTranslation(html) {
-  // Wrap section-metadata elements in <notranslate> tags
-  // This uses a more robust approach to handle various HTML formats
+  // Add translate="no" attribute to section-metadata elements
+  // This uses DeepL's native support for preventing translation
   let prepared = html;
-  let wrappedCount = 0;
+  let modifiedCount = 0;
   
-  // First, find all opening tags with section-metadata class
+  // Find all opening tags with section-metadata class
   // Match various formats: class="section-metadata", class='section-metadata', class=section-metadata
-  const openTagPattern = /<([a-z]+)[^>]*class\s*=\s*["']?[^"'>]*section-metadata[^"'>]*["']?[^>]*>/gi;
+  // This pattern matches the tag name and all attributes including the class with section-metadata
+  const openTagPattern = /<([a-z]+)([^>]*class\s*=\s*["']?[^"'>]*section-metadata[^"'>]*["']?[^>]*)>/gi;
   
-  const matches = [];
-  let match;
-  
-  // Find all opening tags
-  while ((match = openTagPattern.exec(html)) !== null) {
-    matches.push({
-      index: match.index,
-      tagName: match[1].toLowerCase(),
-      fullMatch: match[0]
-    });
-  }
-  
-  // Process matches in reverse order to maintain indices
-  for (let i = matches.length - 1; i >= 0; i--) {
-    const { index, tagName, fullMatch } = matches[i];
-    
-    // Skip if already wrapped
-    if (fullMatch.includes('notranslate')) continue;
-    
-    // Find the matching closing tag by counting nested tags
-    let depth = 1;
-    let pos = index + fullMatch.length;
-    let endIndex = -1;
-    
-    while (pos < prepared.length && depth > 0) {
-      const openPattern = new RegExp(`<${tagName}[^>]*>`, 'gi');
-      const closePattern = new RegExp(`</${tagName}>`, 'gi');
-      
-      openPattern.lastIndex = pos;
-      closePattern.lastIndex = pos;
-      
-      const nextOpen = openPattern.exec(prepared);
-      const nextClose = closePattern.exec(prepared);
-      
-      if (!nextClose) break;
-      
-      const openPos = nextOpen ? nextOpen.index : Infinity;
-      const closePos = nextClose.index;
-      
-      if (openPos < closePos) {
-        depth++;
-        pos = openPos + nextOpen[0].length;
-      } else {
-        depth--;
-        if (depth === 0) {
-          endIndex = closePos + nextClose[0].length;
-          break;
-        }
-        pos = closePos + nextClose[0].length;
-      }
+  // Replace opening tags to add translate="no" attribute
+  prepared = prepared.replace(openTagPattern, (match, tagName, attributes) => {
+    // Skip if translate="no" is already present
+    if (/translate\s*=\s*["']?no["']?/i.test(attributes)) {
+      return match;
     }
     
-    if (endIndex > 0) {
-      // Wrap the entire block
-      const block = prepared.substring(index, endIndex);
-      prepared = prepared.substring(0, index) + 
-                `<notranslate>${block}</notranslate>` + 
-                prepared.substring(endIndex);
-      wrappedCount++;
+    modifiedCount++;
+    // Check if it's a self-closing tag
+    const isSelfClosing = attributes.trim().endsWith('/');
+    // Remove trailing / if present and trim
+    const cleanAttributes = isSelfClosing 
+      ? attributes.trim().slice(0, -1).trim() 
+      : attributes.trim();
+    
+    // Add translate="no" attribute
+    // If there are existing attributes, add a space before translate="no"
+    if (cleanAttributes) {
+      return `<${tagName} ${cleanAttributes} translate="no"${isSelfClosing ? ' /' : ''}>`;
+    } else {
+      // No other attributes, just add translate="no"
+      return `<${tagName} translate="no"${isSelfClosing ? ' /' : ''}>`;
     }
-  }
+  });
   
-  if (wrappedCount > 0) {
-    console.log(`  Wrapped ${wrappedCount} section-metadata block(s) in <notranslate> tags`);
+  if (modifiedCount > 0) {
+    console.log(`  Added translate="no" to ${modifiedCount} section-metadata element(s)`);
   } else {
-    console.log(`  Warning: No section-metadata blocks found to wrap`);
+    console.log(`  Warning: No section-metadata elements found to modify`);
   }
   
   return prepared;
-}
-
-// Restore HTML after translation by unwrapping notranslate tags
-function restoreHTMLAfterTranslation(html) {
-  // Remove notranslate wrapper tags
-  let restored = html;
-  restored = restored.replace(/<notranslate>/gi, '');
-  restored = restored.replace(/<\/notranslate>/gi, '');
-  return restored;
 }
 
 function translateText(text, sourceLang, targetLang, options = {}) {
@@ -204,18 +160,18 @@ function translateText(text, sourceLang, targetLang, options = {}) {
     // If HTML mode, tell DeepL to handle HTML tags and ignore certain elements
     if (isHTML) {
       formData.append('tag_handling', 'html');
-      // Ignore script, style, and notranslate tags (which wrap section-metadata)
-      // DeepL will not translate content inside these tags
-      formData.append('ignore_tags', 'script,style,notranslate');
+      // Ignore script and style tags
+      // DeepL will respect translate="no" attribute automatically (per their docs)
+      formData.append('ignore_tags', 'script,style');
       // Use outline_detection for better HTML handling
       formData.append('outline_detection', '1');
       // Preserve formatting
       formData.append('preserve_formatting', '1');
       
-      // Log if we have notranslate tags in the prepared text
-      if (preservedText.includes('<notranslate>')) {
-        const notranslateCount = (preservedText.match(/<notranslate>/gi) || []).length;
-        console.log(`  Sending HTML with ${notranslateCount} notranslate block(s) to DeepL`);
+      // Log if we have translate="no" attributes in the prepared text
+      if (preservedText.includes('translate="no"')) {
+        const translateNoCount = (preservedText.match(/translate\s*=\s*["']no["']/gi) || []).length;
+        console.log(`  Sending HTML with ${translateNoCount} element(s) marked translate="no" to DeepL`);
       }
     }
 
@@ -255,11 +211,6 @@ function translateText(text, sourceLang, targetLang, options = {}) {
           const parsed = JSON.parse(data);
           if (res.statusCode === 200 && parsed.translations && parsed.translations.length > 0) {
             let translatedText = parsed.translations[0].text;
-            
-            // Restore HTML structure if needed
-            if (isHTML) {
-              translatedText = restoreHTMLAfterTranslation(translatedText);
-            }
             
             // Restore preserved patterns in the translated text
             translatedText = restorePatterns(translatedText, matches);
