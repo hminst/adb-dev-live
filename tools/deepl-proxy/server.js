@@ -90,16 +90,108 @@ function restorePatterns(text, matches) {
   return restoredText;
 }
 
-function translateText(text, sourceLang, targetLang) {
+// Prepare HTML for translation by wrapping section-metadata in a special tag
+function prepareHTMLForTranslation(html) {
+  // Wrap section-metadata elements in <notranslate> tags
+  // This uses a simple approach: find elements with class containing "section-metadata"
+  let prepared = html;
+  
+  // Find and wrap section-metadata blocks
+  // Match opening tag with section-metadata class, capture until matching closing tag
+  // This handles most common cases (div, section, aside elements)
+  const tagPattern = /<(div|section|aside)[^>]*class="[^"]*section-metadata[^"]*"[^>]*>/gi;
+  
+  let match;
+  const matches = [];
+  
+  // Find all opening tags
+  while ((match = tagPattern.exec(html)) !== null) {
+    matches.push({
+      index: match.index,
+      tag: match[1],
+      fullMatch: match[0]
+    });
+  }
+  
+  // Process matches in reverse order to maintain indices
+  for (let i = matches.length - 1; i >= 0; i--) {
+    const { index, tag, fullMatch } = matches[i];
+    const tagName = tag.toLowerCase();
+    
+    // Find the matching closing tag
+    let depth = 1;
+    let pos = index + fullMatch.length;
+    let found = false;
+    
+    while (pos < prepared.length && depth > 0) {
+      const openTag = `<${tagName}`;
+      const closeTag = `</${tagName}>`;
+      
+      const nextOpen = prepared.indexOf(openTag, pos);
+      const nextClose = prepared.indexOf(closeTag, pos);
+      
+      if (nextClose === -1) break;
+      
+      if (nextOpen !== -1 && nextOpen < nextClose) {
+        depth++;
+        pos = nextOpen + openTag.length;
+      } else {
+        depth--;
+        if (depth === 0) {
+          // Found matching closing tag
+          const endPos = nextClose + closeTag.length;
+          const block = prepared.substring(index, endPos);
+          prepared = prepared.substring(0, index) + 
+                    `<notranslate>${block}</notranslate>` + 
+                    prepared.substring(endPos);
+          found = true;
+          break;
+        }
+        pos = nextClose + closeTag.length;
+      }
+    }
+  }
+  
+  return prepared;
+}
+
+// Restore HTML after translation by unwrapping notranslate tags
+function restoreHTMLAfterTranslation(html) {
+  // Remove notranslate wrapper tags
+  let restored = html;
+  restored = restored.replace(/<notranslate>/gi, '');
+  restored = restored.replace(/<\/notranslate>/gi, '');
+  return restored;
+}
+
+function translateText(text, sourceLang, targetLang, options = {}) {
   return new Promise((resolve, reject) => {
+    const { isHTML = false } = options;
+    
+    let textToTranslate = text;
+    
+    // Prepare HTML if needed
+    if (isHTML) {
+      textToTranslate = prepareHTMLForTranslation(text);
+    }
+    
     // Preserve special patterns before translation
-    const { preservedText, matches } = preservePatterns(text);
+    const { preservedText, matches } = preservePatterns(textToTranslate);
     
     const formData = new URLSearchParams();
     formData.append('text', preservedText);
     formData.append('source_lang', sourceLang);
     formData.append('target_lang', targetLang);
     formData.append('auth_key', API_KEY);
+    
+    // If HTML mode, tell DeepL to handle HTML tags and ignore certain elements
+    if (isHTML) {
+      formData.append('tag_handling', 'html');
+      // Ignore script, style, and notranslate tags (which wrap section-metadata)
+      formData.append('ignore_tags', 'script,style,notranslate');
+      // Use outline_detection for better HTML handling
+      formData.append('outline_detection', '1');
+    }
 
     const postData = formData.toString();
     const url = new URL(DEEPL_API_URL);
@@ -136,8 +228,16 @@ function translateText(text, sourceLang, targetLang) {
 
           const parsed = JSON.parse(data);
           if (res.statusCode === 200 && parsed.translations && parsed.translations.length > 0) {
+            let translatedText = parsed.translations[0].text;
+            
+            // Restore HTML structure if needed
+            if (isHTML) {
+              translatedText = restoreHTMLAfterTranslation(translatedText);
+            }
+            
             // Restore preserved patterns in the translated text
-            const translatedText = restorePatterns(parsed.translations[0].text, matches);
+            translatedText = restorePatterns(translatedText, matches);
+            
             resolve({
               success: true,
               translatedText,
@@ -207,7 +307,7 @@ const server = http.createServer(async (req, res) => {
         return;
       }
 
-      const { text, source, target } = JSON.parse(body);
+      const { text, source, target, isHTML = false } = JSON.parse(body);
 
       if (!text || !target) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -220,13 +320,15 @@ const server = http.createServer(async (req, res) => {
 
       // Check if text contains patterns to preserve
       const hasPatterns = /:\w+:/g.test(text);
-      if (hasPatterns) {
+      if (isHTML) {
+        console.log(`Translating HTML document [${sourceLang} → ${targetLang}]`);
+      } else if (hasPatterns) {
         console.log(`Translating (with preserved patterns): ${text.substring(0, 100)}... [${sourceLang} → ${targetLang}]`);
       } else {
         console.log(`Translating: ${text.substring(0, 50)}... [${sourceLang} → ${targetLang}]`);
       }
 
-      const result = await translateText(text, sourceLang, targetLang);
+      const result = await translateText(text, sourceLang, targetLang, { isHTML });
       
       if (hasPatterns) {
         console.log('Translation result (patterns preserved):', result);

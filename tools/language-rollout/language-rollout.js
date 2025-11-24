@@ -90,92 +90,43 @@ function hasAncestorWithClass(node, className) {
   return false;
 }
 
-// Translate HTML content
+// Translate HTML content - sends entire document to DeepL
 async function translateHTML(html, targetLang) {
   try {
-    const parser = new DOMParser();
-    const doc = parser.parseFromString(html, 'text/html');
+    console.log('Translating entire HTML document...');
     
-    // Get all text nodes
-    const textNodes = [];
-    const walker = document.createTreeWalker(
-      doc.body,
-      NodeFilter.SHOW_TEXT,
-      {
-        acceptNode: (node) => {
-          // Skip empty text nodes
-          if (!node.textContent.trim()) return NodeFilter.FILTER_REJECT;
-          
-          const parent = node.parentElement;
-          if (!parent) return NodeFilter.FILTER_REJECT;
-          
-          // Skip nodes in script/style tags
-          if (parent.tagName === 'SCRIPT' || parent.tagName === 'STYLE') {
-            return NodeFilter.FILTER_REJECT;
-          }
-          
-          // Skip section metadata and all its children
-          if (hasAncestorWithClass(node, 'section-metadata')) {
-            return NodeFilter.FILTER_REJECT;
-          }
-          
-          return NodeFilter.FILTER_ACCEPT;
-        }
-      }
-    );
+    // Send entire HTML document to DeepL proxy with isHTML flag
+    const response = await fetch('http://localhost:3001', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        text: html,
+        source: 'en',
+        target: targetLang,
+        isHTML: true
+      })
+    });
     
-    let node;
-    while (node = walker.nextNode()) {
-      textNodes.push(node);
+    if (!response.ok) {
+      const errorData = await response.json();
+      console.error('Translation proxy error:', errorData);
+      return html;
     }
     
-    // Translate text nodes in batches to avoid rate limiting
-    const batchSize = 5;
-    for (let i = 0; i < textNodes.length; i += batchSize) {
-      const batch = textNodes.slice(i, i + batchSize);
-      const translations = await Promise.all(
-        batch.map(node => translateText(node.textContent, targetLang))
-      );
-      
-      translations.forEach((translatedText, index) => {
-        batch[index].textContent = translatedText;
-      });
-      
-      // Small delay to avoid rate limiting
-      if (i + batchSize < textNodes.length) {
-        await new Promise(resolve => setTimeout(resolve, 200));
-      }
+    const data = await response.json();
+    
+    if (data.success && data.translatedText) {
+      console.log('HTML document translated successfully');
+      return data.translatedText;
     }
     
-    // Also translate alt attributes in images (skip if in section-metadata)
-    const images = doc.querySelectorAll('img[alt]');
-    for (const img of images) {
-      if (hasAncestorWithClass(img, 'section-metadata') || img.classList.contains('section-metadata')) {
-        continue;
-      }
-      const alt = img.getAttribute('alt');
-      if (alt && alt.trim()) {
-        const translatedAlt = await translateText(alt, targetLang);
-        img.setAttribute('alt', translatedAlt);
-      }
-    }
-    
-    // Also translate title attributes (skip if in section-metadata)
-    const elementsWithTitle = doc.querySelectorAll('[title]');
-    for (const element of elementsWithTitle) {
-      if (hasAncestorWithClass(element, 'section-metadata') || element.classList.contains('section-metadata')) {
-        continue;
-      }
-      const title = element.getAttribute('title');
-      if (title && title.trim()) {
-        const translatedTitle = await translateText(title, targetLang);
-        element.setAttribute('title', translatedTitle);
-      }
-    }
-    
-    return doc.documentElement.outerHTML;
+    console.warn('Translation failed for HTML document:', data);
+    return html;
   } catch (error) {
     console.error('HTML translation error:', error);
+    console.warn('Is the DeepL proxy server running on port 3001?');
     return html;
   }
 }
