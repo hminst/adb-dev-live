@@ -17,6 +17,7 @@ import { URL } from 'url';
 import { config } from 'dotenv';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { preserveIconElements, restoreIconElements } from './icon-preservation.js';
 
 // Load .env file from the same directory as this script
 const __filename = fileURLToPath(import.meta.url);
@@ -67,137 +68,7 @@ function mapToDeepLCode(langCode) {
   return LANGUAGE_MAP[langCode] || langCode.toUpperCase();
 }
 
-// Preserve icon HTML elements (e.g., <span class="icon icon-logo"></span>) from translation
-// This prevents DeepL from reordering or modifying icon elements
-function preserveIconElements(html) {
-  const iconElements = [];
-  let preservedHtml = html;
-  let index = 0;
-  
-  // Pattern 1: Match self-closing icon tags: <span class="icon icon-logo" />
-  const selfClosingPattern = /<([a-z]+)([^>]*class\s*=\s*["']?[^"'>]*\bicon\b[^"'>]*["']?[^>]*?)\s*\/\s*>/gi;
-  
-  preservedHtml = preservedHtml.replace(selfClosingPattern, (match, tagName, attributes) => {
-    // Skip if this is a section-metadata element
-    if (/class\s*=\s*["']?[^"'>]*section-metadata[^"'>]*["']?/i.test(attributes)) {
-      return match;
-    }
-    
-    const placeholder = `ICONELEMENT${String(index).padStart(3, '0')}`;
-    
-    iconElements.push({
-      placeholder,
-      original: match,
-      tagName,
-      attributes,
-      content: '',
-      isSelfClosing: true,
-      index,
-    });
-    
-    index++;
-    return placeholder;
-  });
-  
-  // Pattern 2: Match paired icon tags: <span class="icon icon-logo">content</span>
-  // We need to match the opening tag and find the corresponding closing tag
-  const openingTagPattern = /<([a-z]+)([^>]*class\s*=\s*["']?[^"'>]*\bicon\b[^"'>]*["']?[^>]*?)>/gi;
-  const matches = [];
-  
-  // First pass: find all opening tags
-  let match;
-  while ((match = openingTagPattern.exec(preservedHtml)) !== null) {
-    const tagName = match[1];
-    const attributes = match[2];
-    const startPos = match.index;
-    const fullOpeningTag = match[0];
-    
-    // Skip if this is a section-metadata element
-    if (/class\s*=\s*["']?[^"'>]*section-metadata[^"'>]*["']?/i.test(attributes)) {
-      continue;
-    }
-    
-    // Find the corresponding closing tag
-    const closingTag = `</${tagName}>`;
-    const afterOpening = preservedHtml.substring(startPos + fullOpeningTag.length);
-    const closingPos = afterOpening.indexOf(closingTag);
-    
-    if (closingPos !== -1) {
-      const content = afterOpening.substring(0, closingPos);
-      const fullElement = preservedHtml.substring(startPos, startPos + fullOpeningTag.length + content.length + closingTag.length);
-      
-      matches.push({
-        fullElement,
-        startPos,
-        tagName,
-        attributes,
-        content,
-        index: index++,
-      });
-    }
-  }
-  
-  // Replace matches in reverse order to preserve positions
-  for (let i = matches.length - 1; i >= 0; i--) {
-    const { fullElement, tagName, attributes, content, index: idx } = matches[i];
-    const placeholder = `ICONELEMENT${String(idx).padStart(3, '0')}`;
-    
-    iconElements.push({
-      placeholder,
-      original: fullElement,
-      tagName,
-      attributes,
-      content,
-      isSelfClosing: false,
-      index: idx,
-    });
-    
-    preservedHtml = preservedHtml.substring(0, matches[i].startPos) +
-                    placeholder +
-                    preservedHtml.substring(matches[i].startPos + fullElement.length);
-  }
-  
-  if (iconElements.length > 0) {
-    console.log(`  Preserving ${iconElements.length} icon element(s) as placeholders`);
-    iconElements.forEach(({ placeholder, tagName }) => {
-      console.log(`    ${placeholder} -> <${tagName} class="icon...">`);
-    });
-  }
-  
-  return { preservedHtml, iconElements };
-}
-
-// Restore icon elements after translation
-function restoreIconElements(html, iconElements) {
-  let restoredHtml = html;
-  let totalRestored = 0;
-  
-  // Restore in reverse order to avoid conflicts
-  const reversedElements = [...iconElements].reverse();
-  
-  reversedElements.forEach(({ placeholder, original, index }) => {
-    // Try exact placeholder match first
-    const exactEscaped = placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    const exactRegex = new RegExp(exactEscaped, 'g');
-    const exactMatches = restoredHtml.match(exactRegex);
-    
-    if (exactMatches && exactMatches.length > 0) {
-      restoredHtml = restoredHtml.replace(exactRegex, original);
-      totalRestored += exactMatches.length;
-      console.log(`  ✓ Restored ${exactMatches.length} icon element(s) using placeholder ${placeholder}`);
-    } else {
-      console.warn(`  ✗ Could not restore icon element: ${placeholder}`);
-    }
-  });
-  
-  if (totalRestored > 0) {
-    console.log(`  ✓ Total icon elements restored: ${totalRestored}`);
-  } else if (iconElements.length > 0) {
-    console.warn(`  ✗ Warning: Could not restore any of ${iconElements.length} icon element(s).`);
-  }
-  
-  return restoredHtml;
-}
+// Icon preservation functions are now imported from icon-preservation.js
 
 // Preserve special patterns like :logo:, :toggle:, :globe: from translation
 function preservePatterns(text) {
@@ -389,6 +260,10 @@ function prepareHTMLForTranslation(html) {
     console.log(`  Added translate="no" to ${modifiedCount} section-metadata element(s)`);
   }
   
+  // IMPORTANT: With split_sentences=0, DeepL should preserve HTML structure
+  // But we also ensure icons are preserved via placeholders for maximum safety
+  console.log('  HTML structure preservation: enabled (split_sentences=0, icon placeholders, section-metadata protection)');
+  
   return prepared;
 }
 
@@ -425,17 +300,23 @@ function translateText(text, sourceLang, targetLang, options = {}) {
       formData.append('tag_handling', 'html');
       // Ignore script and style tags
       // DeepL will respect translate="no" attribute automatically (per their docs)
-      formData.append('ignore_tags', 'script,style');
+      // Ignore script, style, and our notranslate tags
+      formData.append('ignore_tags', 'script,style,notranslate');
       // Use outline_detection for better HTML handling
       formData.append('outline_detection', '1');
       // Preserve formatting
       formData.append('preserve_formatting', '1');
+      // CRITICAL: Prevent sentence splitting to avoid HTML structure rearrangement
+      // This ensures DeepL only translates text content without modifying structure
+      formData.append('split_sentences', '0');
       
       // Log if we have translate="no" attributes in the prepared text
       if (preservedText.includes('translate="no"')) {
         const translateNoCount = (preservedText.match(/translate\s*=\s*["']no["']/gi) || []).length;
         console.log(`  Sending HTML with ${translateNoCount} element(s) marked translate="no" to DeepL`);
       }
+      
+      console.log('  DeepL HTML parameters: tag_handling=html, split_sentences=0 (structure preservation enabled)');
     }
 
     const postData = formData.toString();

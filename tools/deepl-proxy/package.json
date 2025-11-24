@@ -6,7 +6,10 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "test": "node icon-preservation.test.js",
+    "test:verify": "node icon-position-verification.test.js",
+    "test:all": "npm test && npm run test:verify"
   },
   "keywords": [
     "deepl",
