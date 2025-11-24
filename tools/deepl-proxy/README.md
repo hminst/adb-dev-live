@@ -69,14 +69,14 @@ The server will start on `http://localhost:3001`.
 
 #### Prerequisites
 
-1. Install Wrangler CLI (if not already installed):
+1. Install dependencies (includes Wrangler):
 ```bash
-npm install -g wrangler
+npm install
 ```
 
 2. Authenticate with Cloudflare:
 ```bash
-wrangler login
+npx wrangler login
 ```
 
 #### Configure API Key
@@ -84,7 +84,7 @@ wrangler login
 Set the API key as a Cloudflare Worker secret:
 
 ```bash
-wrangler secret put DEEPL_API_KEY
+npx wrangler secret put DEEPL_API_KEY
 # Enter your DeepL API key when prompted
 ```
 
