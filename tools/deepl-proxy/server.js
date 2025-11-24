@@ -260,6 +260,10 @@ function prepareHTMLForTranslation(html) {
     console.log(`  Added translate="no" to ${modifiedCount} section-metadata element(s)`);
   }
   
+  // IMPORTANT: With split_sentences=0, DeepL should preserve HTML structure
+  // But we also ensure icons are preserved via placeholders for maximum safety
+  console.log('  HTML structure preservation: enabled (split_sentences=0, icon placeholders, section-metadata protection)');
+  
   return prepared;
 }
 
@@ -301,12 +305,17 @@ function translateText(text, sourceLang, targetLang, options = {}) {
       formData.append('outline_detection', '1');
       // Preserve formatting
       formData.append('preserve_formatting', '1');
+      // CRITICAL: Prevent sentence splitting to avoid HTML structure rearrangement
+      // This ensures DeepL only translates text content without modifying structure
+      formData.append('split_sentences', '0');
       
       // Log if we have translate="no" attributes in the prepared text
       if (preservedText.includes('translate="no"')) {
         const translateNoCount = (preservedText.match(/translate\s*=\s*["']no["']/gi) || []).length;
         console.log(`  Sending HTML with ${translateNoCount} element(s) marked translate="no" to DeepL`);
       }
+      
+      console.log('  DeepL HTML parameters: tag_handling=html, split_sentences=0 (structure preservation enabled)');
     }
 
     const postData = formData.toString();
