@@ -66,20 +66,23 @@ function preservePatterns(text) {
     uniquePatterns.add(match[0]);
   }
   
-  // Create placeholders that include the original pattern
-  // This makes restoration more reliable since we can search for the pattern itself
+  // Create simple numeric placeholders that don't include the pattern
+  // This prevents DeepL from trying to translate the pattern itself
   const patternArray = Array.from(uniquePatterns);
   
   patternArray.forEach((originalPattern, index) => {
-    // Use a format that includes the pattern but in a way DeepL won't translate
-    // Format: [PATTERN_INDEX:original] - the brackets and structure make it less likely to be modified
-    const placeholder = `[PATTERN_${index}:${originalPattern}]`;
+    // Use a simple format that looks like a code variable or constant
+    // Format: ICON000, ICON001, etc. - looks like code, less likely to be translated
+    const placeholder = `ICON${String(index).padStart(3, '0')}`;
     matches.push({ placeholder, original: originalPattern, index });
   });
   
   // Log preserved patterns for debugging
   if (matches.length > 0) {
     console.log(`  Preserving ${matches.length} unique pattern(s):`, matches.map(m => m.original).join(', '));
+    matches.forEach(({ placeholder, original }) => {
+      console.log(`    ${original} -> ${placeholder}`);
+    });
   }
   
   // Replace all occurrences of each pattern with its placeholder (global replace)
@@ -87,7 +90,12 @@ function preservePatterns(text) {
     // Escape special regex characters and use global flag
     const escapedPattern = original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const regex = new RegExp(escapedPattern, 'g');
+    const beforeCount = (preservedText.match(regex) || []).length;
     preservedText = preservedText.replace(regex, placeholder);
+    const afterCount = (preservedText.match(new RegExp(placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+    if (beforeCount > 0) {
+      console.log(`  Replaced ${beforeCount} occurrence(s) of ${original} with ${placeholder} (verified: ${afterCount} placeholders found)`);
+    }
   });
   
   return { preservedText, matches };
@@ -106,7 +114,7 @@ function restorePatterns(text, matches) {
     let found = false;
     let restoredCount = 0;
     
-    // Strategy 1: Try exact placeholder match (most specific)
+    // Strategy 1: Try exact placeholder match (ICON000, ICON001, etc.)
     const exactEscaped = placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     const exactRegex = new RegExp(exactEscaped, 'g');
     const exactMatches = restoredText.match(exactRegex);
@@ -114,26 +122,21 @@ function restorePatterns(text, matches) {
     if (exactMatches && exactMatches.length > 0) {
       restoredText = restoredText.replace(exactRegex, original);
       restoredCount = exactMatches.length;
-      console.log(`  Restored ${restoredCount} occurrence(s) of ${original} using exact placeholder`);
+      console.log(`  ✓ Restored ${restoredCount} occurrence(s) of ${original} using exact placeholder ${placeholder}`);
       found = true;
     } else {
-      // Strategy 2: Try variations of the placeholder format
+      // Strategy 2: Try case variations (ICON000, icon000, Icon000)
       const variations = [
-        // Brackets might be changed
-        placeholder.replace(/\[/g, '(').replace(/\]/g, ')'), // [ to (
-        placeholder.replace(/\[/g, '{').replace(/\]/g, '}'), // [ to {
-        // Case variations
-        placeholder.toLowerCase(),
-        placeholder.toUpperCase(),
-        // Spaces instead of underscores
-        placeholder.replace(/_/g, ' '),
-        // Without brackets
-        placeholder.replace(/^\[|\]$/g, ''),
-        // Pattern variations
-        `PATTERN_${index}:${original}`,
-        `[PATTERN${index}:${original}]`,
-        `(PATTERN_${index}:${original})`,
-        `{PATTERN_${index}:${original}}`,
+        placeholder.toLowerCase(), // icon000
+        placeholder.toUpperCase(), // ICON000 (already tried, but for completeness)
+        placeholder.charAt(0).toUpperCase() + placeholder.slice(1).toLowerCase(), // Icon000
+        // Handle potential spacing
+        placeholder.replace(/([A-Z])/g, ' $1').trim(), // I C O N 0 0 0
+        // Handle potential number formatting
+        `ICON_${index}`, // ICON_0
+        `ICON${index}`, // ICON0 (without padding)
+        `icon_${index}`, // icon_0
+        `icon${index}`, // icon0
       ];
       
       for (const variation of variations) {
@@ -143,40 +146,30 @@ function restorePatterns(text, matches) {
         if (varMatches && varMatches.length > 0) {
           restoredText = restoredText.replace(varRegex, original);
           restoredCount = varMatches.length;
-          console.log(`  Restored ${restoredCount} occurrence(s) of ${original} using variation: ${variation}`);
+          console.log(`  ✓ Restored ${restoredCount} occurrence(s) of ${original} using variation: ${variation}`);
           found = true;
           break;
         }
       }
       
-      // Strategy 3: Search for pattern with specific index and original pattern
-      // This is more specific than Strategy 4 and avoids conflicts
+      // Strategy 3: Search for ICON followed by the index (with or without padding)
       if (!found) {
-        // Escape the original pattern for regex
-        const escapedOriginal = original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        // Look for PATTERN_index:original with optional brackets
-        const patternSearch = new RegExp(`\\[?PATTERN[_\\s]*${index}[_\\s]*:${escapedOriginal}\\]?`, 'gi');
-        const patternMatches = restoredText.match(patternSearch);
-        if (patternMatches && patternMatches.length > 0) {
-          restoredText = restoredText.replace(patternSearch, original);
-          restoredCount = patternMatches.length;
-          console.log(`  Restored ${restoredCount} occurrence(s) of ${original} using pattern search (index ${index})`);
-          found = true;
-        }
-      }
-      
-      // Strategy 4: Most flexible - search for any wrapper around the specific pattern
-      // Only use this as last resort since it's less specific
-      if (!found) {
-        const escapedOriginal = original.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        // Look for the pattern with any kind of bracket or wrapper, but must include the index
-        const flexiblePattern = new RegExp(`[\\[\\{\\(]?PATTERN[_\\s]*${index}[_\\s]*:${escapedOriginal}[\\]\\}\\)]?`, 'gi');
-        const flexibleMatches = restoredText.match(flexiblePattern);
-        if (flexibleMatches && flexibleMatches.length > 0) {
-          restoredText = restoredText.replace(flexiblePattern, original);
-          restoredCount = flexibleMatches.length;
-          console.log(`  Restored ${restoredCount} occurrence(s) of ${original} using flexible pattern search`);
-          found = true;
+        const iconPatterns = [
+          new RegExp(`ICON${String(index).padStart(3, '0')}`, 'gi'),
+          new RegExp(`ICON${index}`, 'gi'),
+          new RegExp(`icon${String(index).padStart(3, '0')}`, 'gi'),
+          new RegExp(`icon${index}`, 'gi'),
+        ];
+        
+        for (const iconPattern of iconPatterns) {
+          const iconMatches = restoredText.match(iconPattern);
+          if (iconMatches && iconMatches.length > 0) {
+            restoredText = restoredText.replace(iconPattern, original);
+            restoredCount = iconMatches.length;
+            console.log(`  ✓ Restored ${restoredCount} occurrence(s) of ${original} using icon pattern search`);
+            found = true;
+            break;
+          }
         }
       }
     }
@@ -184,16 +177,12 @@ function restorePatterns(text, matches) {
     if (found) {
       totalRestored += restoredCount;
     } else {
-      console.warn(`  Could not restore pattern: ${original} (placeholder: ${placeholder}, index: ${index})`);
+      console.warn(`  ✗ Could not restore pattern: ${original} (placeholder: ${placeholder}, index: ${index})`);
       // Log a sample of the text to help debug
       const sample = restoredText.substring(0, 1000);
-      // Check for any PATTERN mentions or the original pattern
-      if (sample.includes('PATTERN') || sample.includes(original)) {
-        console.warn(`  Found pattern-related text in sample:`, sample);
-        // Also check for the specific index
-        if (sample.includes(`PATTERN${index}`) || sample.includes(`PATTERN_${index}`)) {
-          console.warn(`  Found PATTERN${index} in sample - placeholder may have been modified`);
-        }
+      // Check for any ICON mentions
+      if (sample.includes('ICON') || sample.includes('icon') || sample.includes(original)) {
+        console.warn(`  Found ICON/pattern-related text in sample:`, sample);
       }
     }
   });
