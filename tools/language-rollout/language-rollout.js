@@ -23,6 +23,8 @@ const LANGUAGES = [
   { code: 'fi', name: 'Finnish / Suomi', flag: '🇫🇮' },
 ];
 
+const DEEPL_PROXY_URL = 'https://deepl-proxy.h-minst.workers.dev';
+
 // Check if a page exists
 async function checkPageExists(path, token) {
   try {
@@ -43,9 +45,9 @@ async function translateText(text, targetLang) {
     const sourceLang = 'en'; // Assume source is English
     
     // Use local proxy server
-    const url = 'https://deepl-proxy.h-minst.workers.dev';
     
-    const response = await fetch(url, {
+    
+    const response = await fetch(DEEPL_PROXY_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -96,7 +98,7 @@ async function translateHTML(html, targetLang) {
     console.log('Translating entire HTML document...');
     
     // Send entire HTML document to DeepL proxy with isHTML flag
-    const response = await fetch('http://localhost:3001', {
+    const response = await fetch(DEEPL_PROXY_URL, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
