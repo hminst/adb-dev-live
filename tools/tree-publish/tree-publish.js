@@ -1,6 +1,23 @@
 import { crawl } from 'https://da.live/nx/public/utils/tree.js';
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 import { pushPage, buildTreeStructure, renderTreeNode } from '/tools/shared/publish-utils.js';
+import { createProgressManager, createResultsManager } from '/tools/shared/ui-utils.js';
+
+// Initialize progress and results managers
+const progressManager = createProgressManager({
+  progressSection: () => document.getElementById('progress-section'),
+  progressBar: () => document.getElementById('progress-bar'),
+  progressText: () => document.getElementById('progress-text'),
+  submitButton: () => document.querySelector('button[type="submit"]'),
+}, {
+  processingText: 'Publishing...',
+  defaultButtonText: 'Publish',
+});
+
+const resultsManager = createResultsManager({
+  resultsSection: () => document.getElementById('results-section'),
+  resultsContent: () => document.getElementById('results-content'),
+});
 
 // Progress tracking
 let progressState = {
@@ -10,103 +27,27 @@ let progressState = {
 };
 
 function updateProgress(message) {
-  const progressText = document.getElementById('progress-text');
-  const progressBar = document.getElementById('progress-bar');
-  
-  if (progressText) {
-    progressText.textContent = message;
-  }
-  
-  if (progressBar && progressState.total > 0) {
-    const percentage = ((progressState.completed + progressState.failed) / progressState.total) * 100;
-    progressBar.style.width = `${percentage}%`;
-  }
+  progressManager.setProgressState(progressState);
+  progressManager.updateProgress(message);
+  progressState = progressManager.getProgressState();
 }
 
 function showProgress() {
-  const progressSection = document.getElementById('progress-section');
-  const submitButton = document.querySelector('button[type="submit"]');
-  if (progressSection) {
-    progressSection.style.display = 'block';
-  }
-  if (submitButton) {
-    submitButton.disabled = true;
-    submitButton.textContent = 'Publishing...';
-  }
+  progressManager.showProgress();
 }
 
 function hideProgress() {
-  const progressSection = document.getElementById('progress-section');
-  const submitButton = document.querySelector('button[type="submit"]');
-  if (progressSection) {
-    progressSection.style.display = 'none';
-  }
-  if (submitButton) {
-    submitButton.disabled = false;
-    submitButton.textContent = 'Publish';
-  }
+  progressManager.hideProgress();
   progressState = { total: 0, completed: 0, failed: 0 };
+  progressManager.resetProgressState(progressState);
 }
 
-// Show results
 function showResults(result, type = 'success') {
-  const resultsSection = document.getElementById('results-section');
-  const resultsContent = document.getElementById('results-content');
-  
-  if (!resultsSection || !resultsContent) return;
-  
-  const iconMap = {
-    success: '✅',
-    warning: '⚠️',
-    error: '❌',
-    info: 'ℹ️',
-  };
-  
-  const icon = iconMap[type] || iconMap.info;
-  
-  let html = `<div class="result-${type}">`;
-  html += `<div class="result-header">${icon} ${result.title || 'Complete'}</div>`;
-  
-  if (result.summary) {
-    html += `<div class="result-summary">${result.summary}</div>`;
-  }
-  
-  if (result.stats) {
-    html += '<div class="result-stats">';
-    result.stats.forEach(stat => {
-      html += `<div class="result-stat"><strong>${stat.label}:</strong> ${stat.value}</div>`;
-    });
-    html += '</div>';
-  }
-  
-  if (result.details && result.details.length > 0) {
-    html += '<details class="result-details">';
-    html += '<summary>View Details</summary>';
-    html += '<div class="result-details-content">';
-    result.details.forEach(detail => {
-      const detailIcon = detail.status === 'success' ? '✓' : '✗';
-      const detailClass = detail.status === 'success' ? 'detail-success' : 'detail-error';
-      html += `<div class="result-detail ${detailClass}"><span class="detail-icon">${detailIcon}</span> ${detail.message}</div>`;
-    });
-    html += '</div>';
-    html += '</details>';
-  }
-  
-  html += '</div>';
-  
-  resultsContent.innerHTML = html;
-  resultsSection.style.display = 'block';
-  
-  // Scroll to results
-  resultsSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  resultsManager.showResults(result, type);
 }
 
-// Hide results
 function hideResults() {
-  const resultsSection = document.getElementById('results-section');
-  if (resultsSection) {
-    resultsSection.style.display = 'none';
-  }
+  resultsManager.hideResults();
 }
 
 // Scan and preview tree

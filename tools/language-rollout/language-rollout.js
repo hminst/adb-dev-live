@@ -1,6 +1,11 @@
 import { crawl } from 'https://da.live/nx/public/utils/tree.js';
 import DA_SDK from 'https://da.live/nx/utils/sdk.js';
 import { getOpts, pushPage } from '/tools/shared/publish-utils.js';
+import { API_BASE_URLS, getDASourceURL } from '/tools/shared/api-config.js';
+import { createProgressManager, createResultsManager } from '/tools/shared/ui-utils.js';
+import { translateText, translateHTML } from './modules/translation.js';
+import { copyPage, checkPageExists } from './modules/page-operations.js';
+import { previewPageTree, isLanguagePath, buildTreeStructure, renderTreeNode } from './modules/tree-operations.js';
 
 // Define available languages for rollout
 const LANGUAGES = [
@@ -23,166 +28,28 @@ const LANGUAGES = [
   { code: 'fi', name: 'Finnish / Suomi', flag: '🇫🇮' },
 ];
 
-const DEEPL_PROXY_URL = 'https://deepl-proxy.h-minst.workers.dev';
+// checkPageExists is now imported from modules/page-operations.js
 
-// Check if a page exists
-async function checkPageExists(path, token) {
-  try {
-    const opts = getOpts(token, 'HEAD');
-    const resp = await fetch(`https://admin.da.live/source${path}`, opts);
-    return resp.ok;
-  } catch (error) {
-    console.error(`Error checking if page exists: ${path}`, error);
-    return false;
-  }
-}
+// Initialize progress and results managers
+const progressManager = createProgressManager({
+  progressSection: () => document.getElementById('progress-section'),
+  progressBar: () => document.getElementById('progress-bar'),
+  progressText: () => document.getElementById('progress-text'),
+  submitButton: () => document.querySelector('button[type="submit"]'),
+}, {
+  processingText: 'Processing...',
+  defaultButtonText: 'Rollout',
+});
 
-// Translate text using local DeepL proxy
-async function translateText(text, targetLang) {
-  if (!text || !text.trim()) return text;
-  
-  try {
-    const sourceLang = 'en'; // Assume source is English
-    
-    // Use local proxy server
-    
-    
-    const response = await fetch(DEEPL_PROXY_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        text,
-        source: sourceLang,
-        target: targetLang
-      })
-    });
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('Translation proxy error:', errorData);
-      return text;
-    }
-    
-    const data = await response.json();
-    
-    if (data.success && data.translatedText) {
-      return data.translatedText;
-    }
-    
-    console.warn('Translation failed for text:', text, 'Response:', data);
-    return text;
-  } catch (error) {
-    console.error('Translation error:', error);
-    console.warn('Is the DeepL proxy server running on port 3001?');
-    return text;
-  }
-}
+// Track current language being processed for progress messages
+let currentLanguage = null;
 
-// Helper function to check if a node or any of its ancestors has a specific class
-function hasAncestorWithClass(node, className) {
-  let current = node.parentElement;
-  while (current) {
-    if (current.classList && current.classList.contains(className)) {
-      return true;
-    }
-    current = current.parentElement;
-  }
-  return false;
-}
+const resultsManager = createResultsManager({
+  resultsSection: () => document.getElementById('results-section'),
+  resultsContent: () => document.getElementById('results-content'),
+});
 
-// Translate HTML content - sends entire document to DeepL
-async function translateHTML(html, targetLang) {
-  try {
-    console.log('Translating entire HTML document...');
-    
-    // Send entire HTML document to DeepL proxy with isHTML flag
-    const response = await fetch(DEEPL_PROXY_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        text: html,
-        source: 'en',
-        target: targetLang,
-        isHTML: true
-      })
-    });
-    
-    if (!response.ok) {
-      const errorData = await response.json();
-      console.error('Translation proxy error:', errorData);
-      return html;
-    }
-    
-    const data = await response.json();
-    
-    if (data.success && data.translatedText) {
-      console.log('HTML document translated successfully');
-      return data.translatedText;
-    }
-    
-    console.warn('Translation failed for HTML document:', data);
-    return html;
-  } catch (error) {
-    console.error('HTML translation error:', error);
-    console.warn('Is the DeepL proxy server running on port 3001?');
-    return html;
-  }
-}
-  
-  // Function to copy a page
-  async function copyPage(sourcePath, targetPath, token, options = {}) {
-    const { translate = false, targetLang = 'en' } = options;
-    
-    // 1. Fetch the source document
-    const fetchOpts = getOpts(token, 'GET');
-    const resp = await fetch(`https://admin.da.live/source${sourcePath}`, fetchOpts);
-    
-    if (!resp.ok) {
-      return { 
-        success: false, 
-        message: `Could not fetch source: ${sourcePath}`, 
-        status: resp.status 
-      };
-    }
-    
-    let html = await resp.text();
-    
-    // 2. Translate if requested
-    if (translate && targetLang) {
-      console.log(`Translating ${sourcePath} to ${targetLang}`);
-      html = await translateHTML(html, targetLang);
-    }
-    
-    // 3. Save to target location
-    const body = new FormData();
-    const data = new Blob([html], { type: 'text/html' });
-    body.append('data', data);
-    
-    const saveOpts = getOpts(token, 'POST');
-    saveOpts.body = body;
-    
-    const saveResp = await fetch(`https://admin.da.live/source${targetPath}`, saveOpts);
-    
-    if (!saveResp.ok) {
-      return { 
-        success: false, 
-        message: `Could not save to: ${targetPath}`, 
-        status: saveResp.status 
-      };
-    }
-    
-    return { 
-      success: true, 
-      message: `Successfully copied ${sourcePath} to ${targetPath}${translate ? ' (translated)' : ''}`, 
-      status: saveResp.status 
-    };
-  }
-
-// Progress tracking
+// Progress tracking - extended state for language-rollout
 let progressState = {
   total: 0,
   completed: 0,
@@ -193,104 +60,29 @@ let progressState = {
   pushFailedLive: 0,
 };
 
+// Wrapper functions that use shared managers but maintain extended state
 function updateProgress(message) {
-  const progressText = document.getElementById('progress-text');
-  const progressBar = document.getElementById('progress-bar');
-  
-  if (progressText) {
-    progressText.textContent = message;
-  }
-  
-  if (progressBar && progressState.total > 0) {
-    const percentage = (progressState.completed / progressState.total) * 100;
-    progressBar.style.width = `${percentage}%`;
-  }
+  progressManager.setProgressState(progressState);
+  progressManager.updateProgress(message);
+  progressState = progressManager.getProgressState();
 }
 
 function showProgress() {
-  const progressSection = document.getElementById('progress-section');
-  const submitButton = document.querySelector('button[type="submit"]');
-  if (progressSection) {
-    progressSection.style.display = 'block';
-  }
-  if (submitButton) {
-    submitButton.disabled = true;
-    submitButton.textContent = 'Processing...';
-  }
+  progressManager.showProgress();
 }
 
 function hideProgress() {
-  const progressSection = document.getElementById('progress-section');
-  const submitButton = document.querySelector('button[type="submit"]');
-  if (progressSection) {
-    progressSection.style.display = 'none';
-  }
-  if (submitButton) {
-    submitButton.disabled = false;
-    submitButton.textContent = 'Rollout';
-  }
+  progressManager.hideProgress();
   progressState = { total: 0, completed: 0, failed: 0, pushedPreview: 0, pushedLive: 0, pushFailedPreview: 0, pushFailedLive: 0 };
+  progressManager.resetProgressState(progressState);
 }
 
-// Show results
 function showResults(result, type = 'success') {
-  const resultsSection = document.getElementById('results-section');
-  const resultsContent = document.getElementById('results-content');
-  
-  if (!resultsSection || !resultsContent) return;
-  
-  const iconMap = {
-    success: '✅',
-    warning: '⚠️',
-    error: '❌',
-    info: 'ℹ️',
-  };
-  
-  const icon = iconMap[type] || iconMap.info;
-  
-  let html = `<div class="result-${type}">`;
-  html += `<div class="result-header">${icon} ${result.title || 'Rollout Complete'}</div>`;
-  
-  if (result.summary) {
-    html += `<div class="result-summary">${result.summary}</div>`;
-  }
-  
-  if (result.stats) {
-    html += '<div class="result-stats">';
-    result.stats.forEach(stat => {
-      html += `<div class="result-stat"><strong>${stat.label}:</strong> ${stat.value}</div>`;
-    });
-    html += '</div>';
-  }
-  
-  if (result.details && result.details.length > 0) {
-    html += '<details class="result-details">';
-    html += '<summary>View Details</summary>';
-    html += '<div class="result-details-content">';
-    result.details.forEach(detail => {
-      const detailIcon = detail.status === 'success' ? '✓' : '✗';
-      const detailClass = detail.status === 'success' ? 'detail-success' : 'detail-error';
-      html += `<div class="result-detail ${detailClass}"><span class="detail-icon">${detailIcon}</span> ${detail.message}</div>`;
-    });
-    html += '</div>';
-    html += '</details>';
-  }
-  
-  html += '</div>';
-  
-  resultsContent.innerHTML = html;
-  resultsSection.style.display = 'block';
-  
-  // Scroll to results
-  resultsSection.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  resultsManager.showResults(result, type);
 }
 
-// Hide results
 function hideResults() {
-  const resultsSection = document.getElementById('results-section');
-  if (resultsSection) {
-    resultsSection.style.display = 'none';
-  }
+  resultsManager.hideResults();
 }
 
 // Callback for crawling pages
@@ -370,20 +162,25 @@ async function copyPageTree(sourcePath, targetLanguage, token, basePath, pushOpt
     // Copy each selected file
     for (const checkbox of selectedCheckboxes) {
       const sourcePath = checkbox.dataset.source;
-      const targetPath = checkbox.dataset.target;
+      // Recalculate target path for current language (don't use stored target which is for preview language)
+      // sourcePath is like "/fragments/nav/header.html", sourcePath param is "/fragments"
+      // We need: "/{targetLanguage}/fragments/nav/header.html"
+      const targetPath = `/${targetLanguage}${sourcePath}`;
+      
       // Ensure proper path joining with slash
       const fullSourcePath = sourcePath.startsWith('/') ? `${basePath}${sourcePath}` : `${basePath}/${sourcePath}`;
       const fullTargetPath = targetPath.startsWith('/') ? `${basePath}${targetPath}` : `${basePath}/${targetPath}`;
       
       console.log(`Copy paths: ${fullSourcePath} → ${fullTargetPath}`);
-      updateProgress(`${translate ? 'Translating & copying' : 'Copying'} ${progressState.completed + 1}/${progressState.total}: ${sourcePath}`);
+      const langPrefix = currentLanguage ? `[${currentLanguage.toUpperCase()}] ` : '';
+      updateProgress(`${langPrefix}${translate ? 'Translating & copying' : 'Copying'} ${progressState.completed + 1}/${progressState.total}: ${sourcePath}`);
       
       try {
         const result = await copyPage(fullSourcePath, fullTargetPath, token, {
           translate,
           targetLang: targetLanguage
         });
-        
+    
         if (result.success) {
           progressState.completed++;
           const resultItem = { 
@@ -395,13 +192,14 @@ async function copyPageTree(sourcePath, targetLanguage, token, basePath, pushOpt
           
           // Push to preview/live if requested
           if (shouldPush) {
-            updateProgress(`Pushing ${progressState.completed}/${progressState.total}: ${targetPath}`);
+            const langPrefix = currentLanguage ? `[${currentLanguage.toUpperCase()}] ` : '';
+            updateProgress(`${langPrefix}Pushing ${progressState.completed}/${progressState.total}: ${targetPath}`);
             const pushResults = await pushPage(fullTargetPath, token, { preview, live });
             resultItem.pushResults = pushResults;
             
             console.log('Push results:', pushResults);
             console.log('Preview requested:', preview, 'Live requested:', live);
-            
+    
             // Track push results
             let pushSuccess = true;
             if (preview && pushResults.preview) {
@@ -466,7 +264,7 @@ async function copyPageTree(sourcePath, targetLanguage, token, basePath, pushOpt
     console.log('Final push failed preview:', pushFailedPreviewCount);
     console.log('Final push failed live:', pushFailedLiveCount);
     
-    return {
+    return { 
       success: failed.length === 0,
       total: results.length,
       successful: successful.length,
@@ -498,211 +296,7 @@ function populateLanguageDropdown() {
   });
 }
 
-// Build tree structure from flat file list
-function buildTreeStructure(files, basePath, sourcePath, targetLanguage) {
-  const tree = {};
-  
-  files.forEach((item) => {
-    const relativePath = item.path.replace(basePath + sourcePath, '');
-    const parts = relativePath.split('/').filter(p => p);
-    const targetPath = `/${targetLanguage}${sourcePath}${relativePath}`;
-    const fullSourcePath = `${sourcePath}${relativePath}`;
-    
-    let current = tree;
-    parts.forEach((part, index) => {
-      if (!current[part]) {
-        if (index === parts.length - 1) {
-          // File node
-          current[part] = {
-            __file: true,
-            path: item.path,
-            sourcePath: fullSourcePath,
-            targetPath,
-            exists: item.exists || false,
-          };
-        } else {
-          // Folder node
-          current[part] = {};
-        }
-      }
-      current = current[part];
-    });
-  });
-  
-  return tree;
-}
-
-// Render tree node recursively
-function renderTreeNode(node, name, level, basePath, parentPath = '') {
-  const indent = '  '.repeat(level);
-  const isFile = node.__file;
-  const currentPath = parentPath ? `${parentPath}/${name}` : name;
-  
-  if (isFile) {
-    const existsClass = node.exists ? ' exists' : '';
-    const existsIndicator = node.exists ? '<span class="exists-badge" title="Page already exists - will be overwritten">⚠️ Exists</span>' : '';
-    
-    return `
-      <div class="tree-node tree-file-item${existsClass}" data-level="${level}" data-path="${currentPath}">
-        <div class="tree-node-content">
-          <span class="tree-connector">${indent}</span>
-          <input type="checkbox" 
-                 class="file-checkbox" 
-                 data-path="${currentPath}"
-                 data-source="${node.sourcePath}" 
-                 data-target="${node.targetPath}" 
-                 data-exists="${node.exists}"
-                 id="file-${currentPath.replace(/\//g, '-')}"
-                 checked>
-          <label for="file-${currentPath.replace(/\//g, '-')}" class="tree-name">📄 ${name}</label>
-          ${existsIndicator}
-        </div>
-        <div class="tree-target">
-          <span class="tree-arrow">→</span>
-          <span class="tree-target-path">${node.targetPath}</span>
-        </div>
-      </div>
-    `;
-  } else {
-    let html = `
-      <div class="tree-node tree-folder-item" data-level="${level}" data-path="${currentPath}">
-        <div class="tree-node-content">
-          <span class="tree-connector">${indent}</span>
-          <input type="checkbox" 
-                 class="folder-checkbox" 
-                 data-path="${currentPath}" 
-                 id="folder-${currentPath.replace(/\//g, '-')}"
-                 checked>
-          <label for="folder-${currentPath.replace(/\//g, '-')}" class="tree-name">📁 ${name}</label>
-        </div>
-      </div>
-    `;
-    
-    const children = Object.keys(node).filter(k => k !== '__file').sort();
-    children.forEach(childName => {
-      const childNode = node[childName];
-      html += renderTreeNode(childNode, childName, level + 1, basePath, currentPath);
-    });
-    
-    return html;
-  }
-}
-
-// Check if a path contains a language directory
-function isLanguagePath(path) {
-  const languageCodes = LANGUAGES.map(lang => lang.code);
-  const pathParts = path.split('/').filter(p => p);
-  
-  // Check if any part of the path matches a language code
-  return pathParts.some(part => languageCodes.includes(part));
-}
-
-// Preview pages in tree
-async function previewPageTree(sourcePath, targetLanguage, basePath, token) {
-  const treePreview = document.getElementById('tree-preview');
-  const treePreviewList = document.getElementById('tree-preview-list');
-  const treePreviewLoading = document.getElementById('tree-preview-loading');
-  
-  if (!treePreview || !treePreviewList) return;
-  
-  // Show loading state
-  treePreview.style.display = 'block';
-  treePreviewLoading.style.display = 'flex';
-  treePreviewList.innerHTML = '';
-  
-  const fullSourcePath = `${basePath}${sourcePath}`;
-  
-  try {
-    // Collect all HTML files, excluding language-specific directories
-    const htmlFiles = [];
-    const callback = async (item) => {
-      if (item.ext !== 'html') return null;
-      
-      // Skip files that are in language directories
-      const relativePath = item.path.replace(basePath, '');
-      if (isLanguagePath(relativePath)) {
-        console.log(`Skipping language-specific page: ${relativePath}`);
-        return null;
-      }
-      
-      htmlFiles.push(item);
-      return item;
-    };
-    
-    const { results } = await crawl({ path: fullSourcePath, callback, throttle: 10 });
-    await results;
-    
-    if (htmlFiles.length === 0) {
-      treePreviewLoading.style.display = 'none';
-      treePreviewList.innerHTML = '<div class="preview-empty">No HTML pages found in this directory.</div>';
-      return;
-    }
-    
-    // Check if target pages exist
-    updateProgress('Checking existing pages...');
-    const existenceChecks = htmlFiles.map(async (item) => {
-      const relativePath = item.path.replace(basePath + sourcePath, '');
-      const targetPath = `${basePath}/${targetLanguage}${sourcePath}${relativePath}`;
-      const exists = await checkPageExists(targetPath, token);
-      return { ...item, exists };
-    });
-    
-    const htmlFilesWithExistence = await Promise.all(existenceChecks);
-    
-    // Hide loading
-    treePreviewLoading.style.display = 'none';
-    
-    // Count existing vs new pages
-    const existingCount = htmlFilesWithExistence.filter(f => f.exists).length;
-    const newCount = htmlFilesWithExistence.length - existingCount;
-    
-    // Build tree structure
-    const tree = buildTreeStructure(htmlFilesWithExistence, basePath, sourcePath, targetLanguage);
-    
-    // Render tree
-    let treeHTML = '';
-    const rootKeys = Object.keys(tree).sort();
-    rootKeys.forEach((key) => {
-      treeHTML += renderTreeNode(tree[key], key, 0, basePath + sourcePath, '');
-    });
-    
-    const existsWarning = existingCount > 0 ? `
-      <div class="preview-warning">
-        ⚠️ ${existingCount} page${existingCount !== 1 ? 's' : ''} already exist${existingCount === 1 ? 's' : ''} and will be overwritten
-      </div>
-    ` : '';
-    
-    treePreviewList.innerHTML = `
-      <div class="preview-count">
-        <span class="preview-note">(excluding language-specific pages)</span>
-        <span class="preview-stats">${newCount} new, ${existingCount} existing</span>
-      </div>
-      ${existsWarning}
-      <div class="tree-view">${treeHTML}</div>
-    `;
-    
-    // Add checkbox event listeners
-    setupCheckboxListeners();
-    
-    // Show submit button after tree is loaded
-    const submitButton = document.querySelector('button[type="submit"]');
-    if (submitButton) {
-      submitButton.style.display = 'block';
-    }
-    
-    // Show selection summary
-    const selectionSummary = document.getElementById('selection-summary');
-    if (selectionSummary) {
-      selectionSummary.style.display = 'block';
-    }
-    
-    updateSelectionCount();
-  } catch (error) {
-    treePreviewLoading.style.display = 'none';
-    treePreviewList.innerHTML = `<div class="preview-error">❌ Error scanning directory: ${error.message}</div>`;
-    console.error('Error previewing tree:', error);
-  }
-}
+// buildTreeStructure, renderTreeNode, isLanguagePath, and previewPageTree are now imported from modules/tree-operations.js
 
 // Get all child checkboxes for a given node path
 function getChildCheckboxes(nodePath) {
@@ -807,160 +401,216 @@ function setupCheckboxListeners() {
   });
 }
 
-// Update destination preview
-function updateDestinationPreview(basePath, token) {
-  const sourceInput = document.getElementById('rollout-source');
-  const languageSelect = document.getElementById('rollout-language');
-  const treeCheckbox = document.getElementById('rollout-tree');
-  const destinationPreview = document.getElementById('destination-preview');
-  const destinationPath = document.getElementById('destination-path');
-  const treePreview = document.getElementById('tree-preview');
-  const previewButton = document.getElementById('preview-button');
-  const submitButton = document.querySelector('button[type="submit"]');
-  
-  const source = sourceInput?.value || '';
-  const language = languageSelect?.value || '';
-  const isTree = treeCheckbox?.checked || false;
-  
-  if (source && language) {
-    const fullDestination = `${basePath}/${language}${source}`;
-    const treeIndicator = isTree ? ' (+ all child pages)' : '';
-    destinationPath.textContent = fullDestination + treeIndicator;
-    destinationPreview.style.display = 'block';
-    
-    // Show preview button if tree mode is enabled
-    if (isTree) {
-      if (previewButton) previewButton.style.display = 'block';
-      if (treePreview) treePreview.style.display = 'none';
-      if (submitButton) submitButton.style.display = 'none';
-    } else {
-      if (previewButton) previewButton.style.display = 'none';
-      if (treePreview) treePreview.style.display = 'none';
-      if (submitButton) submitButton.style.display = 'block';
-    }
-  } else {
-    destinationPreview.style.display = 'none';
-    if (previewButton) previewButton.style.display = 'none';
-    if (treePreview) treePreview.style.display = 'none';
-    if (submitButton) submitButton.style.display = source && language ? 'block' : 'none';
-  }
-}
+// Update destination preview (removed - no longer needed since tree copy is always enabled)
 
 // Handle form submission
-function handleRollout(event, token, basePath) {
+async function handleRollout(event, token, basePath) {
   event.preventDefault();
   
   const form = event.target;
   const sourcePath = form['rollout-source'].value;
-  const targetLanguage = form['rollout-language'].value;
-  const copyTree = form['rollout-tree'].checked;
+  const languageSelect = form['rollout-language'];
+  const selectedLanguages = Array.from(languageSelect.selectedOptions).map(opt => opt.value);
+  const copyTree = true; // Always copy entire tree (default behavior)
   const translateContent = form['translate-content']?.checked || false;
   const pushPreview = form['push-preview']?.checked || false;
   const pushLive = form['push-live']?.checked || false;
   
-  if (!sourcePath || !targetLanguage) {
-    alert('Please fill in all fields');
+  if (!sourcePath || selectedLanguages.length === 0) {
+    alert('Please enter a source path and select at least one target language');
     return;
   }
   
   console.log('Rollout initiated:');
   console.log('  Source:', sourcePath);
-  console.log('  Language:', targetLanguage);
+  console.log('  Languages:', selectedLanguages);
   console.log('  Copy Tree:', copyTree);
   console.log('  Translate Content:', translateContent);
   console.log('  Push to Preview:', pushPreview);
   console.log('  Push to Live:', pushLive);
   
   if (copyTree) {
-    // Copy entire page tree (only selected files)
+    // Copy entire page tree (only selected files) for each language
     hideResults(); // Clear previous results
     
-    copyPageTree(sourcePath, targetLanguage, token, basePath, { 
-      preview: pushPreview, 
-      live: pushLive,
-      translate: translateContent
-    })
-      .then((result) => {
+    // Aggregate results across all languages
+    const allResults = {
+      total: 0,
+      successful: 0,
+      failed: 0,
+      pushedPreview: 0,
+      pushedLive: 0,
+      pushFailedPreview: 0,
+      pushFailedLive: 0,
+      details: [],
+      languages: []
+    };
+    
+    try {
+      showProgress();
+  
+      // Get selected checkboxes to calculate total pages
+      const selectedCheckboxes = Array.from(document.querySelectorAll('.file-checkbox:checked'));
+      
+      // Calculate total pages across all languages for overall progress
+      const totalPagesAcrossLanguages = selectedCheckboxes.length * selectedLanguages.length;
+      progressManager.setProgressState({ total: totalPagesAcrossLanguages, completed: 0, failed: 0 });
+      
+      let overallCompleted = 0;
+      
+      // Process each language sequentially
+      for (const targetLanguage of selectedLanguages) {
+      console.log(`\n=== Processing language: ${targetLanguage} ===`);
+      currentLanguage = targetLanguage; // Set current language for progress messages
+      
+      try {
+        const result = await copyPageTree(sourcePath, targetLanguage, token, basePath, { 
+          preview: pushPreview, 
+          live: pushLive,
+          translate: translateContent
+        });
+        
         if (result.total === 0) {
-          showResults({
-            title: 'No Pages Selected',
-            summary: 'Please select at least one page to rollout.',
-          }, 'warning');
-          return;
-        }
-        
-        const type = result.success ? 'success' : 'warning';
-        const details = result.details
-          .filter(d => d.status !== 'success' || result.failed > 0 || (result.pushFailed && result.pushFailed > 0))
-          .map(d => {
-            let message = `${d.path} ${d.status === 'success' || d.status === 'success-push-failed' ? '→ ' + d.targetPath : '- ' + (d.error || 'Failed')}`;
-            
-            // Add push details if applicable
-            if (d.pushResults) {
-              const pushDetails = [];
-              if (d.pushResults.preview) {
-                pushDetails.push(`preview: ${d.pushResults.preview.success ? '✓' : '✗'}`);
-              }
-              if (d.pushResults.live) {
-                pushDetails.push(`live: ${d.pushResults.live.success ? '✓' : '✗'}`);
-              }
-              if (pushDetails.length > 0) {
-                message += ` (${pushDetails.join(', ')})`;
-              }
-            }
-            
-            return {
-              status: d.status === 'success-push-failed' ? 'error' : d.status,
-              message,
-            };
+          allResults.languages.push({
+            language: targetLanguage,
+            status: 'warning',
+            message: 'No pages selected'
           });
+          continue;
+        }
         
-        // Build summary message
-        let summary = result.success 
-          ? `Successfully copied ${result.successful} page${result.successful !== 1 ? 's' : ''} to ${targetLanguage.toUpperCase()}.`
-          : `Copied ${result.successful} page${result.successful !== 1 ? 's' : ''}, but ${result.failed} failed.`;
+        // Aggregate results for this language
+        allResults.total += result.total;
+        allResults.successful += result.successful;
+        allResults.failed += result.failed;
+        allResults.pushedPreview += result.pushedPreview || 0;
+        allResults.pushedLive += result.pushedLive || 0;
+        allResults.pushFailedPreview += result.pushFailedPreview || 0;
+        allResults.pushFailedLive += result.pushFailedLive || 0;
         
-        if (result.hadPushOption) {
-          const pushedPreviewCount = result.pushedPreview || 0;
-          const pushedLiveCount = result.pushedLive || 0;
-          const pushFailedPreviewCount = result.pushFailedPreview || 0;
-          const pushFailedLiveCount = result.pushFailedLive || 0;
-          
-          const pushSummary = [];
-          if (pushPreview) {
-            const previewTotal = result.successful;
-            pushSummary.push(`${pushedPreviewCount}/${previewTotal} to preview`);
+        // Add language-specific details
+        const langDetails = result.details.map(d => ({
+          ...d,
+          language: targetLanguage,
+          message: `[${targetLanguage.toUpperCase()}] ${d.path} ${d.status === 'success' || d.status === 'success-push-failed' ? '→ ' + d.targetPath : '- ' + (d.error || 'Failed')}`
+        }));
+        allResults.details.push(...langDetails);
+        
+        allResults.languages.push({
+          language: targetLanguage,
+          status: result.success ? 'success' : 'warning',
+          successful: result.successful,
+          failed: result.failed,
+          total: result.total
+        });
+        
+        overallCompleted += result.successful;
+        const overallProgress = Math.round((overallCompleted / totalPagesAcrossLanguages) * 100);
+        updateProgress(`[${targetLanguage.toUpperCase()}] Completed: ${result.successful}/${result.total} pages | Overall: ${overallCompleted}/${totalPagesAcrossLanguages} (${overallProgress}%)`);
+        
+      } catch (error) {
+        console.error(`Error processing language ${targetLanguage}:`, error);
+        allResults.languages.push({
+          language: targetLanguage,
+          status: 'error',
+          message: error.message || 'Unknown error'
+        });
+      } finally {
+        currentLanguage = null; // Clear current language after processing
+      }
+    }
+    
+    hideProgress();
+    
+    // Show aggregated results
+    if (allResults.total === 0) {
+      showResults({
+        title: 'No Pages Selected',
+        summary: 'Please select at least one page to rollout.',
+      }, 'warning');
+      return;
+    }
+    
+    const type = allResults.failed === 0 ? 'success' : 'warning';
+    const details = allResults.details
+      .filter(d => d.status !== 'success' || allResults.failed > 0 || (allResults.pushFailedPreview + allResults.pushFailedLive > 0))
+      .map(d => {
+        let message = d.message || `${d.path} ${d.status === 'success' || d.status === 'success-push-failed' ? '→ ' + d.targetPath : '- ' + (d.error || 'Failed')}`;
+        
+        // Add push details if applicable
+        if (d.pushResults) {
+          const pushDetails = [];
+          if (d.pushResults.preview) {
+            pushDetails.push(`preview: ${d.pushResults.preview.success ? '✓' : '✗'}`);
           }
-          if (pushLive) {
-            const liveTotal = result.successful;
-            pushSummary.push(`${pushedLiveCount}/${liveTotal} to live`);
+          if (d.pushResults.live) {
+            pushDetails.push(`live: ${d.pushResults.live.success ? '✓' : '✗'}`);
           }
-          
-          if (pushSummary.length > 0) {
-            summary += ` Pushed ${pushSummary.join(' and ')}.`;
-          }
-          
-          const totalPushFailed = pushFailedPreviewCount + pushFailedLiveCount;
-          if (totalPushFailed > 0) {
-            summary += ` ${totalPushFailed} push operation${totalPushFailed !== 1 ? 's' : ''} failed.`;
+          if (pushDetails.length > 0) {
+            message += ` (${pushDetails.join(', ')})`;
           }
         }
         
-        const stats = [
-          { label: 'Total Pages', value: result.total },
-          { label: 'Copied', value: result.successful },
-          { label: 'Failed', value: result.failed },
-        ];
-        
-        if (result.hadPushOption) {
-          const pushedPreviewCount = result.pushedPreview || 0;
-          const pushedLiveCount = result.pushedLive || 0;
-          const pushFailedPreviewCount = result.pushFailedPreview || 0;
-          const pushFailedLiveCount = result.pushFailedLive || 0;
-          
-          if (pushPreview) {
-            stats.push({ label: 'Pushed to Preview', value: pushedPreviewCount });
-            if (pushFailedPreviewCount > 0) {
+        return {
+          status: d.status === 'success-push-failed' ? 'error' : d.status,
+          message,
+        };
+      });
+    
+    // Build summary message for all languages
+    const langSummary = allResults.languages.map(l => 
+      `${l.language.toUpperCase()}: ${l.successful || 0}/${l.total || 0}`
+    ).join(', ');
+    
+    let summary = allResults.failed === 0
+      ? `Successfully copied ${allResults.successful} page${allResults.successful !== 1 ? 's' : ''} across ${selectedLanguages.length} language${selectedLanguages.length !== 1 ? 's' : ''} (${langSummary}).`
+      : `Copied ${allResults.successful} page${allResults.successful !== 1 ? 's' : ''}, but ${allResults.failed} failed across ${selectedLanguages.length} language${selectedLanguages.length !== 1 ? 's' : ''}.`;
+    
+    // Add translation status if translation was enabled
+    if (translateContent) {
+      summary += ` All content was translated to target languages.`;
+    }
+    
+    if (pushPreview || pushLive) {
+      const pushSummary = [];
+      if (pushPreview) {
+        pushSummary.push(`${allResults.pushedPreview}/${allResults.successful} to preview`);
+      }
+      if (pushLive) {
+        pushSummary.push(`${allResults.pushedLive}/${allResults.successful} to live`);
+      }
+      
+      if (pushSummary.length > 0) {
+        summary += ` Pushed ${pushSummary.join(' and ')}.`;
+      }
+      
+      const totalPushFailed = allResults.pushFailedPreview + allResults.pushFailedLive;
+      if (totalPushFailed > 0) {
+        summary += ` ${totalPushFailed} push operation${totalPushFailed !== 1 ? 's' : ''} failed.`;
+      }
+    }
+    
+    const stats = [
+      { label: 'Languages', value: `${selectedLanguages.length} (${selectedLanguages.map(l => l.toUpperCase()).join(', ')})` },
+      { label: 'Total Pages', value: allResults.total },
+      { label: 'Copied', value: allResults.successful },
+      { label: 'Failed', value: allResults.failed },
+    ];
+    
+    // Add translation status if translation was enabled
+    if (translateContent) {
+      stats.push({ label: 'Translation', value: 'Enabled ✓' });
+    }
+    
+    if (pushPreview || pushLive) {
+      const pushedPreviewCount = allResults.pushedPreview || 0;
+      const pushedLiveCount = allResults.pushedLive || 0;
+      const pushFailedPreviewCount = allResults.pushFailedPreview || 0;
+      const pushFailedLiveCount = allResults.pushFailedLive || 0;
+      
+      if (pushPreview) {
+        stats.push({ label: 'Pushed to Preview', value: pushedPreviewCount });
+        if (pushFailedPreviewCount > 0) {
               stats.push({ label: 'Preview Push Failed', value: pushFailedPreviewCount });
             }
           }
@@ -969,118 +619,34 @@ function handleRollout(event, token, basePath) {
             if (pushFailedLiveCount > 0) {
               stats.push({ label: 'Live Push Failed', value: pushFailedLiveCount });
             }
-          }
         }
-        
-        showResults({
-          title: result.success ? 'Rollout Successful' : 'Rollout Completed with Errors',
-          summary,
-          stats,
-          details: result.failed > 0 || result.pushFailed > 0 ? details : [],
-        }, type);
-        
-        console.log('Tree rollout completed:', result);
-        
-        if (result.success) {
-          // Reset form on complete success
-          setTimeout(() => {
-            form.reset();
-            document.getElementById('destination-preview').style.display = 'none';
-            document.getElementById('tree-preview').style.display = 'none';
-          }, 500);
-        }
-      })
-      .catch((error) => {
-        showResults({
-          title: 'Rollout Error',
-          summary: error.message,
-        }, 'error');
-        console.error('Tree rollout error:', error);
-        hideProgress();
-      });
-  } else {
-    // Copy single page
-    hideResults(); // Clear previous results
+      }
+      
+    showResults({
+      title: allResults.failed === 0 ? 'Rollout Successful' : 'Rollout Completed with Errors',
+      summary,
+      stats,
+      details: allResults.failed > 0 || (allResults.pushFailedPreview + allResults.pushFailedLive > 0) ? details : [],
+    }, type);
     
-    const fullSourcePath = `${basePath}${sourcePath}`;
-    const fullDestinationPath = `${basePath}/${targetLanguage}${sourcePath}`;
+    console.log('Multi-language rollout completed:', allResults);
     
-    console.log('  Full Source Path:', fullSourcePath);
-    console.log('  Full Destination Path:', fullDestinationPath);
-    
-    copyPage(fullSourcePath, fullDestinationPath, token, {
-      translate: translateContent,
-      targetLang: targetLanguage
-    })
-      .then(async (result) => {
-        if (result.success) {
-          let pushResults = null;
-          let pushSuccess = true;
-          
-          // Push to preview/live if requested
-          if (pushPreview || pushLive) {
-            pushResults = await pushPage(fullDestinationPath, token, { preview: pushPreview, live: pushLive });
-            
-            // Check if any push failed
-            if (pushPreview && pushResults.preview && !pushResults.preview.success) {
-              pushSuccess = false;
-            }
-            if (pushLive && pushResults.live && !pushResults.live.success) {
-              pushSuccess = false;
-            }
-          }
-          
-          const stats = [
-            { label: 'Source', value: sourcePath },
-            { label: 'Target', value: `/${targetLanguage}${sourcePath}` },
-          ];
-          
-          if (pushResults) {
-            if (pushResults.preview) {
-              stats.push({ label: 'Preview', value: pushResults.preview.success ? '✓ Pushed' : '✗ Failed' });
-            }
-            if (pushResults.live) {
-              stats.push({ label: 'Live', value: pushResults.live.success ? '✓ Published' : '✗ Failed' });
-            }
-          }
-          
-          showResults({
-            title: pushSuccess ? 'Page Copied Successfully' : 'Page Copied (Push Failed)',
-            summary: pushSuccess 
-              ? `Successfully copied page to ${targetLanguage.toUpperCase()}${pushResults ? ' and pushed.' : '.'}` 
-              : `Successfully copied page to ${targetLanguage.toUpperCase()}, but push failed.`,
-            stats,
-          }, pushSuccess ? 'success' : 'warning');
-          
-          console.log('Rollout successful:', result, pushResults);
-          
-          // Reset form
-          if (pushSuccess) {
-            setTimeout(() => {
-              form.reset();
-              document.getElementById('destination-preview').style.display = 'none';
-            }, 500);
-          }
-        } else {
-          showResults({
-            title: 'Copy Failed',
-            summary: result.message,
-            stats: [
-              { label: 'Status', value: result.status || 'Error' },
-            ],
-          }, 'error');
-          
-          console.error('Rollout failed:', result);
-        }
-      })
-      .catch((error) => {
-        showResults({
-          title: 'Rollout Error',
-          summary: error.message,
-        }, 'error');
-        
-        console.error('Rollout error:', error);
-      });
+    if (allResults.failed === 0) {
+      // Reset form on complete success
+      setTimeout(() => {
+        form.reset();
+        // Destination preview removed - tree copy is always enabled
+        document.getElementById('tree-preview').style.display = 'none';
+      }, 500);
+      }
+    } catch (error) {
+      showResults({
+        title: 'Rollout Error',
+        summary: error.message,
+      }, 'error');
+      console.error('Multi-language rollout error:', error);
+      hideProgress();
+    }
   }
 }
 
@@ -1104,41 +670,40 @@ function handleRollout(event, token, basePath) {
       form.addEventListener('submit', (event) => handleRollout(event, token, cmp.path));
     }
     
-    // Setup live preview for destination path
+    // Setup scan button (similar to tree-publish)
     const sourceInput = document.getElementById('rollout-source');
     const languageSelect = document.getElementById('rollout-language');
-    const treeCheckbox = document.getElementById('rollout-tree');
-    const refreshPreviewBtn = document.getElementById('refresh-preview');
+    const scanButton = document.getElementById('scan-button');
+    const refreshScanBtn = document.getElementById('refresh-scan');
+    const rolloutButton = document.querySelector('button[type="submit"]');
     
-    if (sourceInput && languageSelect) {
-      sourceInput.addEventListener('input', () => updateDestinationPreview(cmp.path, token));
-      languageSelect.addEventListener('change', () => updateDestinationPreview(cmp.path, token));
-    }
-    
-    if (treeCheckbox) {
-      treeCheckbox.addEventListener('change', () => updateDestinationPreview(cmp.path, token));
-    }
-    
-    // Setup preview button
-    const previewButton = document.getElementById('preview-button');
-    if (previewButton && sourceInput && languageSelect) {
-      previewButton.addEventListener('click', () => {
+    if (scanButton && sourceInput && languageSelect) {
+      scanButton.addEventListener('click', () => {
         const source = sourceInput.value || '';
-        const language = languageSelect.value || '';
-        if (source && language) {
-          previewPageTree(source, language, cmp.path, token);
+        const selectedLanguages = Array.from(languageSelect.selectedOptions).map(opt => opt.value);
+        if (!source || selectedLanguages.length === 0) {
+          alert('Please enter a source path and select at least one target language.');
+          return;
+        }
+        // Preview with all selected languages to check existence for each
+        previewPageTree(cmp.path, source, selectedLanguages, token, updateProgress, setupCheckboxListeners, updateSelectionCount);
+        if (rolloutButton) rolloutButton.style.display = 'block'; // Show rollout button after scan
+      });
+    }
+    
+    if (refreshScanBtn) {
+      refreshScanBtn.addEventListener('click', () => {
+        const source = sourceInput?.value || '';
+        const selectedLanguages = Array.from(languageSelect.selectedOptions).map(opt => opt.value);
+        if (source && selectedLanguages.length > 0) {
+          previewPageTree(cmp.path, source, selectedLanguages, token, updateProgress, setupCheckboxListeners, updateSelectionCount);
         }
       });
     }
     
-    if (refreshPreviewBtn) {
-      refreshPreviewBtn.addEventListener('click', () => {
-        const source = sourceInput?.value || '';
-        const language = languageSelect?.value || '';
-        if (source && language && treeCheckbox?.checked) {
-          previewPageTree(source, language, cmp.path, token);
-        }
-      });
+    // Hide rollout button initially (will show after scan)
+    if (rolloutButton) {
+      rolloutButton.style.display = 'none';
     }
     
     // Setup select all/deselect all buttons

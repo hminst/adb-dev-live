@@ -16,34 +16,31 @@
   <body>
     <h1>Language Rollout</h1>
     <form id="rollout-form">
-        <label for="rollout-source">Source</label>
-        <input type="text" id="rollout-source" name="rollout-source" placeholder="/index.html">
+        <label for="rollout-source">Source Path</label>
+        <input type="text" id="rollout-source" name="rollout-source" placeholder="/path/to/directory">
+        <div class="help-text">Enter a directory path to scan all HTML pages within it</div>
         
-        <label for="rollout-language">Target Language</label>
-        <select id="rollout-language" name="rollout-language">
-          <option value="">Select a language...</option>
+        <label for="rollout-language">Target Languages</label>
+        <select id="rollout-language" name="rollout-language" multiple size="5">
         </select>
+        <div class="help-text">Hold Ctrl/Cmd to select multiple languages. Rollout will be performed for each selected language.</div>
         
-        <div class="checkbox-wrapper">
-          <label>
-            <input type="checkbox" id="rollout-tree" name="rollout-tree">
-            Copy entire page tree (all child pages)
-          </label>
-        </div>
-        
-        <div class="checkbox-wrapper">
-          <label>
-            <input type="checkbox" id="translate-content" name="translate-content">
-            Translate content to target language
-          </label>
-        </div>
-        <div class="help-text" style="margin-top: -0.5rem; margin-bottom: 1rem;">
-          Uses DeepL for high-quality machine translation via local proxy (port 3001)
-          <br><em>Note: Ensure the DeepL proxy server is running before using translation</em>
+        <div class="form-section">
+          <label class="section-label">Translation:</label>
+          <div class="checkbox-wrapper">
+            <label>
+              <input type="checkbox" id="translate-content" name="translate-content">
+              Translate content to target language
+            </label>
+          </div>
+          <div class="help-text" style="margin-top: 0.5rem;">
+            Uses DeepL for high-quality machine translation via local proxy (port 3001)
+            <br><em>Note: Ensure the DeepL proxy server is running before using translation</em>
+          </div>
         </div>
         
         <div class="form-section">
-          <label class="section-label">After copying:</label>
+          <label class="section-label">Actions:</label>
           <div class="checkbox-wrapper">
             <label>
               <input type="checkbox" id="push-preview" name="push-preview">
@@ -58,19 +55,15 @@
           </div>
         </div>
         
-        <button type="button" id="preview-button" style="display: none;">Preview Pages</button>
-        
-        <div id="destination-preview" style="margin-top: 1rem; padding: 1rem; background: #e8f4f8; border-radius: 4px; display: none;">
-          <strong>Destination:</strong> <code id="destination-path"></code>
-        </div>
+        <button type="button" id="scan-button">Scan Directory</button>
         
         <div id="tree-preview" style="display: none;">
           <div id="tree-preview-header">
-            <strong>Pages to be copied:</strong>
+            <strong>Pages found:</strong>
             <div class="preview-actions">
               <button type="button" id="select-all">☑️ Select All</button>
               <button type="button" id="deselect-all">☐ Deselect All</button>
-              <button type="button" id="refresh-preview">🔄 Refresh</button>
+              <button type="button" id="refresh-scan">🔄 Refresh</button>
             </div>
           </div>
           <div id="tree-preview-loading" style="display: none;">

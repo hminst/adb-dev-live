@@ -3,6 +3,8 @@
  * Used by language-rollout and tree-publish tools
  */
 
+import { getHLXPreviewURL, getHLXLiveURL } from './api-config.js';
+
 // Helper function for API options
 export function getOpts(token, method = 'GET') {
   return {
@@ -36,7 +38,7 @@ export function parseFullPath(fullPath) {
 export async function pushToPreview(fullPath, token) {
   try {
     const { org, repo, path } = parseFullPath(fullPath);
-    const url = `https://admin.hlx.page/preview/${org}/${repo}/main${path}`;
+    const url = getHLXPreviewURL(org, repo, path);
     
     const opts = getOpts(token, 'POST');
     const resp = await fetch(url, opts);
@@ -65,7 +67,7 @@ export async function pushToPreview(fullPath, token) {
 export async function pushToLive(fullPath, token) {
   try {
     const { org, repo, path } = parseFullPath(fullPath);
-    const url = `https://admin.hlx.page/live/${org}/${repo}/main${path}`;
+    const url = getHLXLiveURL(org, repo, path);
     
     const opts = getOpts(token, 'POST');
     const resp = await fetch(url, opts);
