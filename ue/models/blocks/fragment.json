@@ -1,0 +1,31 @@
+{
+  "definitions": [
+    {
+      "title": "Fragment",
+      "id": "fragment",
+      "plugins": {
+        "da": {
+          "name": "fragment",
+          "rows": 1,
+          "columns": 1
+        }
+      }
+    }
+  ],
+  "models": [
+    {
+      "id": "fragment",
+      "fields": [
+        {
+          "component": "text",
+          "valueType": "string",
+          "name": "div:nth-child(1)>div:nth-child(1)>a:nth-child(1)[href]",
+          "label": "Fragment Path",
+          "value": "",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "filters": []
+}

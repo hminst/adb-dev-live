@@ -1,0 +1,31 @@
+{
+  "definitions": [
+    {
+      "title": "Schedule",
+      "id": "schedule",
+      "plugins": {
+        "da": {
+          "name": "schedule",
+          "rows": 1,
+          "columns": 1
+        }
+      }
+    }
+  ],
+  "models": [
+    {
+      "id": "schedule",
+      "fields": [
+        {
+          "component": "text",
+          "valueType": "string",
+          "name": "div:nth-child(1)>div:nth-child(1)>a:nth-child(1)[href]",
+          "label": "Schedule JSON URL",
+          "value": "",
+          "required": true
+        }
+      ]
+    }
+  ],
+  "filters": []
+}

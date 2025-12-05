@@ -1,0 +1,40 @@
+{
+  "definitions": [
+    {
+      "title": "Section",
+      "id": "section",
+      "plugins": {
+        "da": {
+          "unsafeHTML": "<div></div>"
+        }
+      },
+      "filter": "section",
+      "model": "section"
+    }
+  ],
+  "models": [
+    {
+      "id": "section",
+      "fields": []
+    }
+  ],
+  "filters": [
+    {
+      "id": "section",
+      "components": [
+        "accordion",
+        "card",
+        "carousel",
+        "columns",
+        "fragment",
+        "hero",
+        "image",
+        "schedule",
+        "section-metadata",
+        "table",
+        "text",
+        "youtube"
+      ]
+    }
+  ]
+}

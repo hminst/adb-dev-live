@@ -1,0 +1,200 @@
+{
+  "groups": [
+    {
+      "title": "Default Content",
+      "id": "default",
+      "components": [
+        {
+          "title": "Text",
+          "id": "text",
+          "plugins": {
+            "da": {
+              "name": "text",
+              "type": "text"
+            }
+          }
+        },
+        {
+          "title": "Image",
+          "id": "image",
+          "plugins": {
+            "da": {
+              "name": "image",
+              "type": "image"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "title": "Sections",
+      "id": "sections",
+      "components": [
+        {
+          "title": "Section",
+          "id": "section",
+          "plugins": {
+            "da": {
+              "unsafeHTML": "<div></div>"
+            }
+          },
+          "filter": "section",
+          "model": "section"
+        }
+      ]
+    },
+    {
+      "title": "Blocks",
+      "id": "blocks",
+      "components": [
+        {
+          "title": "Accordion",
+          "id": "accordion",
+          "plugins": {
+            "da": {
+              "name": "accordion",
+              "rows": 1,
+              "columns": 2
+            }
+          }
+        },
+        {
+          "title": "Accordion Item",
+          "id": "accordion-item",
+          "plugins": {
+            "da": {
+              "name": "accordion-item",
+              "rows": 1,
+              "columns": 2
+            }
+          }
+        },
+        {
+          "title": "Card",
+          "id": "card",
+          "plugins": {
+            "da": {
+              "name": "card",
+              "rows": 1,
+              "columns": 1
+            }
+          }
+        },
+        {
+          "title": "Carousel",
+          "id": "carousel",
+          "plugins": {
+            "da": {
+              "unsafeHTML": "<div class=\"carousel\"><div><div><picture><source type=\"image/webp\" srcset=\"\"><source type=\"image/jpeg\" srcset=\"\"><img loading=\"lazy\"></picture></div><div></div></div>"
+            }
+          }
+        },
+        {
+          "title": "Carousel Slide",
+          "id": "carousel-item",
+          "plugins": {
+            "da": {
+              "unsafeHTML": "<div><div><picture><source type=\"image/webp\" srcset=\"\"><source type=\"image/jpeg\" srcset=\"\"><img loading=\"lazy\"></picture></div><div></div></div>"
+            }
+          }
+        },
+        {
+          "title": "Columns",
+          "id": "columns",
+          "plugins": {
+            "da": {
+              "name": "columns",
+              "rows": 1,
+              "columns": 2,
+              "behaviour": "columns"
+            }
+          }
+        },
+        {
+          "title": "Columns Row",
+          "id": "columns-row",
+          "plugins": {
+            "da": {
+              "name": "columns-row",
+              "behaviour": "columns-row"
+            }
+          }
+        },
+        {
+          "title": "Columns Cell",
+          "id": "columns-cell",
+          "plugins": {
+            "da": {
+              "unsafeHTML": "<div></div>",
+              "behaviour": "columns-cell"
+            }
+          }
+        },
+        {
+          "title": "Fragment",
+          "id": "fragment",
+          "plugins": {
+            "da": {
+              "name": "fragment",
+              "rows": 1,
+              "columns": 1
+            }
+          }
+        },
+        {
+          "title": "Hero",
+          "id": "hero",
+          "plugins": {
+            "da": {
+              "unsafeHTML": "<div class=\"hero\"><div><div><picture><source type=\"image/webp\" srcset=\"\"><source type=\"image/jpeg\" srcset=\"\"><img loading=\"lazy\"></picture><h1></h1></div></div></div>"
+            }
+          }
+        },
+        {
+          "title": "Schedule",
+          "id": "schedule",
+          "plugins": {
+            "da": {
+              "name": "schedule",
+              "rows": 1,
+              "columns": 1
+            }
+          }
+        },
+        {
+          "title": "Section Metadata",
+          "id": "section-metadata",
+          "plugins": {
+            "da": {
+              "name": "section-metadata",
+              "rows": 1,
+              "columns": 2
+            }
+          }
+        },
+        {
+          "title": "Table",
+          "id": "table",
+          "plugins": {
+            "da": {
+              "name": "table",
+              "rows": 2,
+              "columns": 2
+            }
+          }
+        },
+        {
+          "title": "YouTube",
+          "id": "youtube",
+          "plugins": {
+            "da": {
+              "name": "youtube",
+              "rows": 1,
+              "columns": 2
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

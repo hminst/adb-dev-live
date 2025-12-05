@@ -1,0 +1,17 @@
+{
+  "definitions": [
+    {
+      "title": "Table",
+      "id": "table",
+      "plugins": {
+        "da": {
+          "name": "table",
+          "rows": 2,
+          "columns": 2
+        }
+      }
+    }
+  ],
+  "models": [],
+  "filters": []
+}
