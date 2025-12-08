@@ -15,7 +15,27 @@
   "models": [
     {
       "id": "section",
-      "fields": []
+      "fields": [
+        {
+          "component": "multiselect",
+          "name": "classes",
+          "label": "Style",
+          "options": [
+            {
+              "name": "Highlight",
+              "value": "highlight"
+            },
+            {
+              "name": "Center",
+              "value": "center"
+            },
+            {
+              "name": "Container",
+              "value": "container"
+            }
+          ]
+        }
+      ]
     }
   ],
   "filters": [
