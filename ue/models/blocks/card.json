@@ -5,9 +5,7 @@
       "id": "card",
       "plugins": {
         "da": {
-          "name": "card",
-          "rows": 1,
-          "columns": 1
+          "unsafeHTML": "<div><div><picture><source type=\"image/webp\" srcset=\"\"><source type=\"image/jpeg\" srcset=\"\"><img loading=\"lazy\"></picture></div><div></div></div>"
         }
       }
     }
@@ -19,22 +17,22 @@
         {
           "component": "reference",
           "valueType": "string",
-          "name": "div:nth-child(1)>div:nth-child(1)>picture:nth-child(1)>img:nth-child(3)[src]",
+          "name": "div:nth-child(1)>picture:nth-child(1)>img:nth-child(3)[src]",
           "label": "Image",
           "multi": false
         },
         {
           "component": "text",
           "valueType": "string",
-          "name": "div:nth-child(1)>div:nth-child(1)>picture:nth-child(1)>img:nth-child(3)[alt]",
-          "label": "Alt",
+          "name": "div:nth-child(1)>picture:nth-child(1)>img:nth-child(3)[alt]",
+          "label": "Image Alt",
           "value": ""
         },
         {
           "component": "richtext",
-          "name": "div:nth-child(1)>div:nth-child(1)>div:nth-child(2)",
+          "name": "div:nth-child(1)>div:nth-child(2)",
           "value": "",
-          "label": "Content",
+          "label": "Text",
           "valueType": "string"
         }
       ]
