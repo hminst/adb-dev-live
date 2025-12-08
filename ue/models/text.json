@@ -11,5 +11,17 @@
       }
     }
   ],
-  "models": []
+  "models": [
+    {
+      "id": "text",
+      "fields": [
+        {
+          "component": "richtext",
+          "name": ".",
+          "label": "Text",
+          "valueType": "string"
+        }
+      ]
+    }
+  ]
 }
