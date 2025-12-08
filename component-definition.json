@@ -81,6 +81,15 @@
           }
         },
         {
+          "title": "Carousel Template",
+          "id": "carousel-template",
+          "plugins": {
+            "da": {
+              "unsafeHTML": "<div class=\"section\"><div class=\"carousel\"><div><div><picture><source type=\"image/webp\" srcset=\"\"><source type=\"image/jpeg\" srcset=\"\"><img loading=\"lazy\" alt=\"\"></picture></div><div><h2></h2><p></p></div></div></div></div>"
+            }
+          }
+        },
+        {
           "title": "Carousel",
           "id": "carousel",
           "plugins": {
