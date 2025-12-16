@@ -137,10 +137,20 @@ class ADLDocxToPages extends LitElement {
             });
           }
         } else if (tagName === 'table') {
-          // Handle tables
-          const rows = Array.from(node.querySelectorAll('tr')).map(tr => 
-            Array.from(tr.querySelectorAll('td, th')).map(cell => cell.textContent.trim())
-          );
+          // Handle tables with merged cells support
+          const rows = Array.from(node.querySelectorAll('tr')).map(tr => {
+            const cells = [];
+            Array.from(tr.querySelectorAll('td, th')).forEach(cell => {
+              const cellData = {
+                text: cell.textContent.trim(),
+                tag: cell.tagName.toLowerCase(), // 'td' or 'th'
+                rowspan: parseInt(cell.getAttribute('rowspan') || '1'),
+                colspan: parseInt(cell.getAttribute('colspan') || '1'),
+              };
+              cells.push(cellData);
+            });
+            return cells;
+          });
           if (rows.length > 0) {
             currentPage.content.push({
               type: 'table',
@@ -244,27 +254,68 @@ class ADLDocxToPages extends LitElement {
             const thead = doc.createElement('thead');
             const tbody = doc.createElement('tbody');
             
-            // Header row
-            const headerRow = doc.createElement('tr');
-            item.rows[0].forEach(cellText => {
-              const th = doc.createElement('th');
-              th.textContent = (cellText || '').trim();
-              headerRow.appendChild(th);
-            });
-            thead.appendChild(headerRow);
-            table.appendChild(thead);
+            // Track merged cells to skip them in subsequent rows
+            // Map: row index -> Set of column indices that are merged from above
+            const mergedCells = new Map();
             
-            // Data rows
-            item.rows.slice(1).forEach(rowData => {
+            item.rows.forEach((rowData, rowIndex) => {
               const tr = doc.createElement('tr');
-              rowData.forEach(cellText => {
-                const td = doc.createElement('td');
-                td.textContent = (cellText || '').trim();
-                tr.appendChild(td);
+              let colIndex = 0;
+              
+              rowData.forEach(cellData => {
+                // Skip cells that are part of a rowspan from previous rows
+                while (mergedCells.has(rowIndex) && mergedCells.get(rowIndex).has(colIndex)) {
+                  colIndex++;
+                }
+                
+                // Create cell element (th for header row, td for data rows)
+                const cell = doc.createElement(rowIndex === 0 ? 'th' : 'td');
+                
+                // Handle both old format (string) and new format (object with text, rowspan, colspan)
+                if (typeof cellData === 'string') {
+                  cell.textContent = (cellData || '').trim();
+                } else {
+                  cell.textContent = (cellData.text || '').trim();
+                  
+                  // Set rowspan and colspan attributes if present
+                  if (cellData.rowspan && cellData.rowspan > 1) {
+                    cell.setAttribute('rowspan', cellData.rowspan.toString());
+                    
+                    // Track merged cells for subsequent rows
+                    for (let r = rowIndex + 1; r < rowIndex + cellData.rowspan; r++) {
+                      if (!mergedCells.has(r)) {
+                        mergedCells.set(r, new Set());
+                      }
+                      const colspan = cellData.colspan || 1;
+                      for (let c = colIndex; c < colIndex + colspan; c++) {
+                        mergedCells.get(r).add(c);
+                      }
+                    }
+                  }
+                  
+                  if (cellData.colspan && cellData.colspan > 1) {
+                    cell.setAttribute('colspan', cellData.colspan.toString());
+                  }
+                }
+                
+                tr.appendChild(cell);
+                
+                // Advance column index by colspan (or 1 if not specified)
+                const colspan = (typeof cellData === 'object' && cellData.colspan) ? cellData.colspan : 1;
+                colIndex += colspan;
               });
-              tbody.appendChild(tr);
+              
+              if (rowIndex === 0) {
+                thead.appendChild(tr);
+              } else {
+                tbody.appendChild(tr);
+              }
             });
-            table.appendChild(tbody);
+            
+            table.appendChild(thead);
+            if (tbody.children.length > 0) {
+              table.appendChild(tbody);
+            }
             section.appendChild(table);
           }
           break;
