@@ -120,13 +120,45 @@ class ADLDocxToPages extends LitElement {
               text,
             });
           }
-        } else if (tagName === 'p') {
-          const text = node.textContent.trim();
-          if (text) {
+        } else if (tagName === 'img') {
+          // Handle images
+          const src = node.getAttribute('src') || '';
+          const alt = node.getAttribute('alt') || '';
+          
+          if (src) {
             currentPage.content.push({
-              type: 'paragraph',
-              text,
+              type: 'image',
+              src,
+              alt,
             });
+          }
+        } else if (tagName === 'p') {
+          // Check if paragraph contains only an image (no text content)
+          const img = node.querySelector('img');
+          const hasText = node.textContent.trim().length > 0;
+          
+          if (img && !hasText) {
+            // Paragraph with only an image - treat as standalone image
+            const src = img.getAttribute('src') || '';
+            const alt = img.getAttribute('alt') || '';
+            if (src) {
+              currentPage.content.push({
+                type: 'image',
+                src,
+                alt,
+              });
+            }
+          } else {
+            // Regular paragraph (with or without images mixed with text)
+            // For now, extract text only - images in paragraphs will be preserved as text
+            // In future, we could parse HTML to preserve inline images
+            const text = node.textContent.trim();
+            if (text) {
+              currentPage.content.push({
+                type: 'paragraph',
+                text,
+              });
+            }
           }
         } else if (tagName === 'ul' || tagName === 'ol') {
           const items = Array.from(node.querySelectorAll('li')).map(li => li.textContent.trim());
@@ -212,6 +244,52 @@ class ADLDocxToPages extends LitElement {
           const heading = doc.createElement(headingTag);
           heading.textContent = item.text;
           section.appendChild(heading);
+          break;
+        case 'image':
+          // Create picture element for AEM Edge Delivery Services
+          const picture = doc.createElement('picture');
+          
+          // Check if it's a data URI (base64) or a URL
+          const isDataUri = item.src.startsWith('data:');
+          
+          if (isDataUri) {
+            // For base64 images, create a simple img tag
+            // In production, these should be uploaded to /media/ folder
+            const img = doc.createElement('img');
+            img.setAttribute('src', item.src);
+            img.setAttribute('alt', item.alt || '');
+            img.setAttribute('loading', 'lazy');
+            picture.appendChild(img);
+          } else {
+            // For URL-based images, create responsive picture element
+            // WebP desktop source
+            const sourceWebpDesktop = doc.createElement('source');
+            sourceWebpDesktop.setAttribute('type', 'image/webp');
+            sourceWebpDesktop.setAttribute('srcset', `${item.src}?width=2000&format=webply&optimize=medium`);
+            sourceWebpDesktop.setAttribute('media', '(min-width: 600px)');
+            picture.appendChild(sourceWebpDesktop);
+            
+            // WebP mobile source
+            const sourceWebpMobile = doc.createElement('source');
+            sourceWebpMobile.setAttribute('type', 'image/webp');
+            sourceWebpMobile.setAttribute('srcset', `${item.src}?width=750&format=webply&optimize=medium`);
+            picture.appendChild(sourceWebpMobile);
+            
+            // JPEG desktop source
+            const sourceJpegDesktop = doc.createElement('source');
+            sourceJpegDesktop.setAttribute('srcset', `${item.src}?width=2000&format=jpeg&optimize=medium`);
+            sourceJpegDesktop.setAttribute('media', '(min-width: 600px)');
+            picture.appendChild(sourceJpegDesktop);
+            
+            // Fallback img
+            const img = doc.createElement('img');
+            img.setAttribute('src', `${item.src}?width=750&format=jpeg&optimize=medium`);
+            img.setAttribute('alt', item.alt || '');
+            img.setAttribute('loading', 'lazy');
+            picture.appendChild(img);
+          }
+          
+          section.appendChild(picture);
           break;
         case 'paragraph':
           const p = doc.createElement('p');
