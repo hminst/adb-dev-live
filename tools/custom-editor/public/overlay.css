@@ -1,0 +1,320 @@
+/* Injected by the custom-editor proxy. Scoped under #ce- ids/classes to avoid
+   colliding with the proxied page's own styles. */
+
+.ce-inline-editable {
+  outline: 2px dashed #2fd1b0 !important;
+  outline-offset: 2px;
+  cursor: text;
+  border-radius: 2px;
+}
+
+.ce-inline-editable:focus {
+  outline-style: solid !important;
+  background: rgba(47, 209, 176, 0.06);
+}
+
+.ce-inline-image {
+  outline: 2px dashed #2fd1b0;
+  outline-offset: 2px;
+  cursor: pointer;
+}
+
+#ce-hover-box,
+#ce-selection-box {
+  position: fixed;
+  pointer-events: none;
+  z-index: 2147483000;
+  box-sizing: border-box;
+  display: none;
+  transition: top 0.05s linear, left 0.05s linear, width 0.05s linear, height 0.05s linear;
+}
+
+#ce-hover-box {
+  border: 2px solid #6d5efc;
+  background: rgba(109, 94, 252, 0.08);
+}
+
+#ce-selection-box {
+  border: 2px solid #ff5470;
+  background: rgba(255, 84, 112, 0.08);
+}
+
+#ce-hover-label,
+#ce-selection-label {
+  position: fixed;
+  z-index: 2147483001;
+  pointer-events: none;
+  display: none;
+  font: 11px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: #fff;
+  white-space: nowrap;
+}
+
+#ce-hover-label {
+  background: #6d5efc;
+}
+
+#ce-selection-label {
+  background: #ff5470;
+}
+
+#ce-inspector,
+#ce-palette {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  width: 320px;
+  box-sizing: border-box;
+  background: #1e1e24;
+  color: #e8e8ef;
+  font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  z-index: 2147483002;
+  display: none;
+  flex-direction: column;
+  overflow-y: auto;
+  padding: 16px;
+  gap: 12px;
+}
+
+/* Inspector docks on the right; palette docks on the left so the two never overlap. */
+#ce-inspector {
+  right: 0;
+  box-shadow: -2px 0 12px rgba(0, 0, 0, 0.35);
+}
+
+#ce-palette {
+  left: 0;
+  width: 220px;
+  box-shadow: 2px 0 12px rgba(0, 0, 0, 0.35);
+}
+
+/* The palette is always visible (unlike the inspector, which only shows on
+   selection), so it pushes the page's own content aside rather than
+   floating over it and intercepting clicks on whatever's underneath. */
+body.ce-has-palette {
+  margin-left: 220px !important;
+}
+
+#ce-inspector.ce-open,
+#ce-palette {
+  display: flex;
+}
+
+#ce-inspector h2,
+#ce-palette h2 {
+  font-size: 14px;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+#ce-inspector .ce-close,
+#ce-palette .ce-close {
+  cursor: pointer;
+  color: #9a9aa8;
+  background: none;
+  border: none;
+  font-size: 16px;
+  padding: 0 4px;
+}
+
+#ce-inspector .ce-section,
+#ce-palette .ce-section {
+  border-top: 1px solid #33333d;
+  padding-top: 12px;
+}
+
+#ce-inspector .ce-attr-row,
+#ce-palette .ce-attr-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+  color: #b7b7c4;
+  margin-bottom: 4px;
+}
+
+#ce-inspector .ce-attr-row code,
+#ce-palette .ce-attr-row code {
+  color: #e8e8ef;
+}
+
+#ce-inspector label,
+#ce-palette label {
+  display: block;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #9a9aa8;
+  margin-bottom: 4px;
+}
+
+#ce-inspector .ce-field-group-label,
+#ce-palette .ce-field-group-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-weight: 700;
+  color: #b6acff;
+  margin: 12px 0 6px;
+  padding-top: 8px;
+  border-top: 1px solid #33333d;
+}
+
+#ce-inspector .ce-field,
+#ce-palette .ce-field {
+  margin-bottom: 10px;
+  border-radius: 4px;
+  transition: background 0.3s ease;
+}
+
+#ce-inspector .ce-field.ce-flash,
+#ce-palette .ce-field.ce-flash {
+  background: rgba(47, 209, 176, 0.15);
+}
+
+#ce-inspector textarea,
+#ce-inspector input[type="text"],
+#ce-palette textarea,
+#ce-palette input[type="text"] {
+  width: 100%;
+  box-sizing: border-box;
+  background: #101014;
+  color: #e8e8ef;
+  border: 1px solid #33333d;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, monospace;
+  resize: vertical;
+}
+
+#ce-inspector textarea,
+#ce-palette textarea {
+  min-height: 60px;
+}
+
+#ce-inspector button.ce-primary,
+#ce-palette button.ce-primary {
+  background: #6d5efc;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-weight: 600;
+}
+
+#ce-inspector button.ce-primary:disabled,
+#ce-palette button.ce-primary:disabled {
+  background: #4a4560;
+  cursor: not-allowed;
+}
+
+#ce-inspector button.ce-secondary,
+#ce-palette button.ce-secondary {
+  background: none;
+  border: 1px solid #33333d;
+  color: #e8e8ef;
+  border-radius: 4px;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+#ce-inspector button.ce-danger {
+  border-color: #ff5470;
+  color: #ff8ca0;
+  margin-left: auto;
+}
+
+#ce-inspector button.ce-danger:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+#ce-inspector .ce-status,
+#ce-palette .ce-status {
+  font-size: 12px;
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+
+#ce-inspector .ce-status.ce-ok,
+#ce-palette .ce-status.ce-ok {
+  background: rgba(70, 200, 130, 0.15);
+  color: #6fe3a3;
+}
+
+#ce-inspector .ce-status.ce-error,
+#ce-palette .ce-status.ce-error {
+  background: rgba(255, 84, 112, 0.15);
+  color: #ff8ca0;
+}
+
+#ce-inspector .ce-status.ce-info,
+#ce-palette .ce-status.ce-info {
+  background: rgba(109, 94, 252, 0.15);
+  color: #b6acff;
+}
+
+#ce-inspector .ce-actions,
+#ce-palette .ce-actions {
+  display: flex;
+  gap: 8px;
+}
+
+#ce-palette .ce-palette-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#ce-palette .ce-palette-item {
+  padding: 10px 12px;
+  border: 1px dashed #4a4560;
+  border-radius: 6px;
+  background: #26262e;
+  cursor: grab;
+  font-weight: 600;
+  text-align: center;
+}
+
+#ce-palette .ce-palette-item:active {
+  cursor: grabbing;
+}
+
+#ce-drop-indicator {
+  position: fixed;
+  height: 3px;
+  background: #6d5efc;
+  border-radius: 2px;
+  box-shadow: 0 0 6px rgba(109, 94, 252, 0.8);
+  pointer-events: none;
+  z-index: 2147483003;
+  display: none;
+}
+
+#ce-section-handle {
+  position: fixed;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: #26262e;
+  border: 1px solid #4a4560;
+  color: #b7b7c4;
+  font-size: 12px;
+  line-height: 1;
+  letter-spacing: -2px;
+  cursor: grab;
+  z-index: 2147483001;
+  user-select: none;
+}
+
+#ce-section-handle:active {
+  cursor: grabbing;
+}

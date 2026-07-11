@@ -1,0 +1,17 @@
+{
+  "name": "custom-editor",
+  "version": "1.0.0",
+  "description": "Reverse proxy + overlay for highlighting, selecting, and editing EDS blocks by data-block-name",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --env-file=.env server.js",
+    "dev": "node --env-file=.env --watch server.js",
+    "test": "node --test test/*.test.js"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "da-auth-helper": "github:adobe-rnd/da-auth-helper"
+  }
+}
