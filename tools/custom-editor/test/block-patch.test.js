@@ -12,12 +12,16 @@ import {
   deleteSectionDefaultContentElement,
   getSectionMetadataFields,
   setSectionMetadataFields,
+  addSectionMetadataField,
+  removeSectionMetadataField,
   getSectionChildCount,
   insertBlockIntoSection,
   deleteBlockOccurrence,
   getSectionCount,
   moveSection,
   insertSection,
+  deleteSection,
+  moveBlockOccurrence,
 } from '../public/lib/block-patch.js';
 
 // Captured verbatim from the real rendered /accordion page's first card, via
@@ -411,6 +415,88 @@ test('setSectionMetadataFields throws a clear error for a section with no sectio
   );
 });
 
+test('addSectionMetadataField creates a new section-metadata block for a section that has none', () => {
+  const updated = addSectionMetadataField(TWO_SECTIONS_WITH_METADATA_HTML, 1, 'style', 'dark-scheme');
+  const fields = getSectionMetadataFields(updated, 1);
+  assert.deepEqual(fields.map((f) => f.key), ['style']);
+  assert.deepEqual(fields.map((f) => f.value), ['dark-scheme']);
+  // other sections' own metadata and content untouched
+  assert.deepEqual(getSectionMetadataFields(updated, 0).map((f) => f.key), ['style', 'grid', 'gap', 'spacing']);
+  assert.match(updated, /No metadata in this section\./);
+});
+
+test('addSectionMetadataField appends a new row to an existing section-metadata block', () => {
+  const updated = addSectionMetadataField(TWO_SECTIONS_WITH_METADATA_HTML, 2, 'grid', '2');
+  const fields = getSectionMetadataFields(updated, 2);
+  assert.deepEqual(fields.map((f) => f.key), ['style', 'grid']);
+  assert.deepEqual(fields.map((f) => f.value), ['light-scheme', '2']);
+  // section 0's metadata is a separate occurrence and stays untouched
+  assert.equal(getSectionMetadataFields(updated, 0).length, 4);
+});
+
+test('removeSectionMetadataField removes just one row, keeping the block and its other rows', () => {
+  const fields = getSectionMetadataFields(TWO_SECTIONS_WITH_METADATA_HTML, 0);
+  const gridRow = fields.find((f) => f.key === 'grid');
+  const updated = removeSectionMetadataField(TWO_SECTIONS_WITH_METADATA_HTML, 0, gridRow.rowIndex);
+  const reread = getSectionMetadataFields(updated, 0);
+  assert.deepEqual(reread.map((f) => f.key), ['style', 'gap', 'spacing']);
+});
+
+test('removeSectionMetadataField removes the whole block when removing its only row', () => {
+  const fields = getSectionMetadataFields(TWO_SECTIONS_WITH_METADATA_HTML, 2);
+  const updated = removeSectionMetadataField(TWO_SECTIONS_WITH_METADATA_HTML, 2, fields[0].rowIndex);
+  assert.deepEqual(getSectionMetadataFields(updated, 2), []);
+  assert.match(updated, /Second section with metadata\./); // section's own content untouched
+});
+
+const SECTION_WITH_P_WRAPPED_METADATA_HTML = `<main>
+  <div>
+    <p>Content</p>
+    <div class="section-metadata">
+      <div><div>style</div><div><p>center, container</p></div></div>
+      <div><div>grid</div><div>4</div></div>
+    </div>
+  </div>
+</main>`;
+
+test('getSectionMetadataFields strips a DA-authored <p> wrapper from the value, exposing bare text', () => {
+  const fields = getSectionMetadataFields(SECTION_WITH_P_WRAPPED_METADATA_HTML, 0);
+  assert.equal(fields[0].value, 'center, container');
+  assert.equal(fields[0].valueWrapperTag, 'p');
+  // a value with no wrapper in the source has no wrapper tag to restore
+  assert.equal(fields[1].value, '4');
+  assert.equal(fields[1].valueWrapperTag, null);
+});
+
+test('setSectionMetadataFields re-wraps an edited value in its original <p> wrapper', () => {
+  const fields = getSectionMetadataFields(SECTION_WITH_P_WRAPPED_METADATA_HTML, 0);
+  fields[0].value = 'center';
+  const updated = setSectionMetadataFields(SECTION_WITH_P_WRAPPED_METADATA_HTML, 0, fields);
+  assert.match(updated, /<div>style<\/div><div><p>center<\/p><\/div>/);
+  // never renders the wrapper tag as literal text
+  assert.doesNotMatch(updated, /<p>center, container<\/p>/);
+});
+
+test('setSectionMetadataFields round-trips an unedited <p>-wrapped value byte-for-byte', () => {
+  const fields = getSectionMetadataFields(SECTION_WITH_P_WRAPPED_METADATA_HTML, 0);
+  const updated = setSectionMetadataFields(SECTION_WITH_P_WRAPPED_METADATA_HTML, 0, fields);
+  assert.equal(updated, SECTION_WITH_P_WRAPPED_METADATA_HTML);
+});
+
+test('addSectionMetadataField wraps the new value in <p>, matching DA-authored rows, but reads back unwrapped', () => {
+  const updated = addSectionMetadataField(TWO_SECTIONS_WITH_METADATA_HTML, 1, 'style', 'dark-scheme');
+  assert.match(updated, /<div>style<\/div><div><p>dark-scheme<\/p><\/div>/);
+  const fields = getSectionMetadataFields(updated, 1);
+  assert.equal(fields[0].value, 'dark-scheme');
+});
+
+test('removeSectionMetadataField throws a clear error for a section with no section-metadata block', () => {
+  assert.throws(
+    () => removeSectionMetadataField(TWO_SECTIONS_WITH_METADATA_HTML, 1, 0),
+    /no section-metadata block/,
+  );
+});
+
 test('getSectionChildCount counts all top-level children, blocks included', () => {
   assert.equal(getSectionChildCount(SECTION_WITH_DEFAULT_CONTENT_HTML, 0), 4); // h2, p, card, card
 });
@@ -565,4 +651,116 @@ test('insertSection clamps an out-of-range index rather than throwing', () => {
   const updated = insertSection(THREE_SECTIONS_HTML, 99, '<div><p>end</p></div>');
   assert.deepEqual(sectionOrder(updated), ['A', 'B', 'C']);
   assert.match(updated, /Section C<\/p><\/div>\n<div><p>end<\/p><\/div><\/main>$/);
+});
+
+test('deleteSection removes a middle section, leaving the others untouched and in order', () => {
+  const updated = deleteSection(THREE_SECTIONS_HTML, 1);
+  assert.deepEqual(sectionOrder(updated), ['A', 'C']);
+  assert.equal(getSectionCount(updated), 2);
+});
+
+test('deleteSection removes the first and last section correctly', () => {
+  assert.deepEqual(sectionOrder(deleteSection(THREE_SECTIONS_HTML, 0)), ['B', 'C']);
+  assert.deepEqual(sectionOrder(deleteSection(THREE_SECTIONS_HTML, 2)), ['A', 'B']);
+});
+
+test('deleteSection removes everything inside the section, blocks included', () => {
+  const html = '<main><div><p>A</p></div><div><p>keep-default</p><div class="card"><div><div>keep-cell</div></div></div></div></main>';
+  const updated = deleteSection(html, 0);
+  assert.equal(updated, '<main><div><p>keep-default</p><div class="card"><div><div>keep-cell</div></div></div></div></main>');
+});
+
+test('deleteSection throws a clear error for an out-of-range sectionIndex', () => {
+  assert.throws(() => deleteSection(THREE_SECTIONS_HTML, 5), /Section 5 not found/);
+});
+
+/* -------------------------------------------------------- moving existing blocks */
+
+const TWO_SECTIONS_WITH_BLOCKS_HTML = `<main>
+  <div><p>A-default</p><div class="card"><div><div>A1</div></div></div><div class="hero"><div><div>A2</div></div></div></div>
+  <div><p>B-default</p><div class="card"><div><div>B1</div></div></div></div>
+</main>`;
+
+test('moveBlockOccurrence reorders a block within its own section, before another block', () => {
+  const updated = moveBlockOccurrence(TWO_SECTIONS_WITH_BLOCKS_HTML, 'hero', 0, { sectionIndex: 0, insertBeforeIndex: 1 });
+  assert.match(updated, /A-default.*<div class="hero">.*<div class="card">/s);
+  assert.equal(listOccurrences(updated, 'hero').length, 1);
+  assert.equal(listOccurrences(updated, 'card').length, 2);
+});
+
+const BLOCKS_ONLY_SECTION_HTML = '<main><div>'
+  + '<div class="a"><div><div>1</div></div></div>'
+  + '<div class="b"><div><div>2</div></div></div>'
+  + '<div class="c"><div><div>3</div></div></div>'
+  + '</div></main>';
+
+function blockNameOrder(html) {
+  return [...html.matchAll(/class="([abc])"/g)].map((m) => m[1]);
+}
+
+test('moveBlockOccurrence swapping adjacent blocks both directions', () => {
+  const movedBack = moveBlockOccurrence(BLOCKS_ONLY_SECTION_HTML, 'b', 0, { sectionIndex: 0, insertBeforeIndex: 0 });
+  assert.deepEqual(blockNameOrder(movedBack), ['b', 'a', 'c']);
+
+  const noOp = moveBlockOccurrence(BLOCKS_ONLY_SECTION_HTML, 'a', 0, { sectionIndex: 0, insertBeforeIndex: 1 });
+  assert.deepEqual(blockNameOrder(noOp), ['a', 'b', 'c']); // adjacent forward move is a no-op position-wise
+});
+
+test('moveBlockOccurrence moves a block across sections (div form)', () => {
+  const updated = moveBlockOccurrence(TWO_SECTIONS_WITH_BLOCKS_HTML, 'card', 0, { sectionIndex: 1, insertBeforeIndex: 2 });
+  assert.equal(listOccurrences(updated, 'card').length, 2);
+  assert.deepEqual(getBlockCells(updated, 'card', 0), ['B1']); // section 1's own card, still first in document order
+  assert.deepEqual(getBlockCells(updated, 'card', 1), ['A1']); // moved card now lands after it
+  assert.match(updated, /A-default.*<div class="hero">/s); // section 0 keeps its default content and hero
+  assert.doesNotMatch(updated.split('B-default')[0], /A1/); // section 0 no longer contains the moved card
+});
+
+test('moveBlockOccurrence works on the table alternate form too', () => {
+  const html = '<main>'
+    + '<div><table><tr><td colspan="2">Card</td></tr><tr><td>img</td><td>text</td></tr></table></div>'
+    + '<div><p>Second section</p></div>'
+    + '</main>';
+  const updated = moveBlockOccurrence(html, 'card', 0, { sectionIndex: 1, insertBeforeIndex: 1 });
+  assert.equal(listOccurrences(updated, 'card').length, 1);
+  assert.equal(getSectionChildCount(updated, 0), 0);
+  assert.match(updated, /<p>Second section<\/p>\n<table>/);
+});
+
+test('moveBlockOccurrence moving into an empty section', () => {
+  const html = '<main><div><div class="card"><div><div>A1</div></div></div></div><div></div></main>';
+  const updated = moveBlockOccurrence(html, 'card', 0, { sectionIndex: 1, insertBeforeIndex: 0 });
+  assert.equal(getSectionChildCount(updated, 0), 0);
+  assert.equal(getSectionChildCount(updated, 1), 1);
+  assert.deepEqual(getBlockCells(updated, 'card', 0), ['A1']);
+});
+
+test('moveBlockOccurrence moving the last block out of a section leaves it with only default content', () => {
+  const html = '<main><div><p>Keep me</p><div class="card"><div><div>A1</div></div></div></div><div><p>Other</p></div></main>';
+  const updated = moveBlockOccurrence(html, 'card', 0, { sectionIndex: 1, insertBeforeIndex: 1 });
+  assert.equal(getSectionChildCount(updated, 0), 1);
+  assert.deepEqual(getSectionDefaultContentFields(updated, 0).map((f) => f.value), ['Keep me']);
+  assert.equal(listOccurrences(updated, 'card').length, 1);
+});
+
+test('moveBlockOccurrence throws a clear error for a missing occurrence', () => {
+  assert.throws(
+    () => moveBlockOccurrence(TWO_SECTIONS_WITH_BLOCKS_HTML, 'card', 5, { sectionIndex: 0, insertBeforeIndex: 0 }),
+    /not found/,
+  );
+});
+
+test('moveBlockOccurrence preserves other occurrences and unrelated content byte-for-byte', () => {
+  const html = `
+    <div class="section-metadata"><div>keep me</div></div>
+    <div class="card"><div><div>A1</div></div></div>
+    <div class="card"><div><div>B1</div></div></div>
+    <div class="card"><div><div>C1</div></div></div>
+  `;
+  const wrapped = `<main><div>${html}</div><div><p>other section</p></div></main>`;
+  const updated = moveBlockOccurrence(wrapped, 'card', 0, { sectionIndex: 1, insertBeforeIndex: 1 });
+  assert.match(updated, /section-metadata"><div>keep me<\/div>/);
+  assert.deepEqual(getBlockCells(updated, 'card', 0), ['B1']);
+  assert.deepEqual(getBlockCells(updated, 'card', 1), ['C1']);
+  assert.deepEqual(getBlockCells(updated, 'card', 2), ['A1']);
+  assert.match(updated, /<p>other section<\/p>/);
 });

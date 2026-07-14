@@ -31,6 +31,27 @@ export function heroBlockHtml() {
 }
 
 /**
+ * blocks/card/card.js expects a single row/cell containing, in order: a
+ * `<p>` wrapping the picture (moved into its own "card-picture-container" and
+ * unwrapped from the `<p>` on decoration), then the remaining paragraphs of
+ * that same cell become the "card-content-container" - the last paragraph is
+ * treated as a CTA only if it contains a link, so a plain description
+ * paragraph (no link) is left alone. Placeholder image is a real, reachable
+ * URL (placehold.co) for the same reason as heroBlockHtml's.
+ */
+export function cardBlockHtml() {
+  return [
+    '<div class="card">',
+    '<div><div>',
+    '<p><picture><img src="https://placehold.co/600x400/6d5efc/ffffff?text=Card+Image" alt="Placeholder card image"></picture></p>',
+    '<p><strong>Card title goes here</strong></p>',
+    '<p>Add a short description for this card.</p>',
+    '</div></div>',
+    '</div>',
+  ].join('\n');
+}
+
+/**
  * A brand-new, empty content section. A section only gains
  * `class="section"` from client-side decoration (ak.js) - authoring it with
  * that class already present would be wrong (and confusable with the
@@ -47,5 +68,6 @@ export function plainSectionHtml() {
 
 export const BLOCK_TEMPLATES = {
   hero: { label: 'Hero', kind: 'block', html: heroBlockHtml },
+  card: { label: 'Card', kind: 'block', html: cardBlockHtml },
   section: { label: 'Section', kind: 'section', html: plainSectionHtml },
 };

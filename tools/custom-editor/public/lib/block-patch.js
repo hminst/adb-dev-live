@@ -206,7 +206,7 @@ const VOID_ELEMENTS = new Set([
  * inside another element of the fragment), preserving each one's exact
  * outerHTML. Insignificant whitespace between elements is dropped.
  */
-function splitTopLevelElements(html) {
+function splitTopLevelElementRanges(html) {
   const tagRe = /<(\/?)([a-zA-Z][a-zA-Z0-9-]*)\b[^>]*?(\/?)>/g;
   const elements = [];
   let depth = 0;
@@ -233,7 +233,12 @@ function splitTopLevelElements(html) {
     }
     match = tagRe.exec(html);
   }
-  return elements.map(({ start, end }) => html.slice(start, end).trim()).filter(Boolean);
+  return elements;
+}
+
+/** Trimmed outerHTML strings for each range splitTopLevelElementRanges finds. */
+function splitTopLevelElements(html) {
+  return splitTopLevelElementRanges(html).map(({ start, end }) => html.slice(start, end).trim()).filter(Boolean);
 }
 
 function unwrapWrapper(elementHtml) {
@@ -502,6 +507,14 @@ function findSectionMetadataOccurrence(html, section) {
  * Get a section's `section-metadata` block rows as key/value fields (empty
  * array if the section has no such block). `value` is editable; `key` and
  * `keyHtml` are read-only (the key cell is written back unchanged).
+ *
+ * A value cell authored through DA's own editor is always wrapped in a
+ * block-level element (typically `<p>`) - same as any other DA table/cell
+ * text - so the raw innerHTML would otherwise show that wrapper tag as
+ * literal text (e.g. `<p>center, container</p>`) once rendered into a plain
+ * input. `value` here is unwrapped down to the bare text (or comma-separated
+ * tokens, for a multi-value key like `style`); `valueWrapperTag` remembers
+ * what to re-wrap it in on save (null if the cell had no such wrapper).
  */
 export function getSectionMetadataFields(html, sectionIndex) {
   const section = findSection(html, sectionIndex);
@@ -510,9 +523,10 @@ export function getSectionMetadataFields(html, sectionIndex) {
   const rowsAndCells = getRowsAndCells(occurrences[index]);
   return rowsAndCells.map((row, rowIndex) => {
     const keyHtml = (row.cells[0]?.innerHTML ?? '').trim();
-    const valueHtml = (row.cells[1]?.innerHTML ?? '').trim();
+    const rawValueHtml = (row.cells[1]?.innerHTML ?? '').trim();
+    const { wrapperTag, value } = unwrapWrapper(rawValueHtml);
     return {
-      rowIndex, key: stripTags(keyHtml), keyHtml, value: valueHtml,
+      rowIndex, key: stripTags(keyHtml), keyHtml, value, valueWrapperTag: wrapperTag,
     };
   });
 }
@@ -520,8 +534,11 @@ export function getSectionMetadataFields(html, sectionIndex) {
 /**
  * Write a full set of section-metadata fields (as obtained from
  * getSectionMetadataFields, with some `value`s edited) back into the
- * section's section-metadata block. Throws if the section has no such
- * block - check getSectionMetadataFields returns a non-empty array first.
+ * section's section-metadata block - re-wrapping each value in its original
+ * `valueWrapperTag` (see getSectionMetadataFields), if any, so a round-trip
+ * without editing the value is byte-for-byte unchanged. Throws if the
+ * section has no such block - check getSectionMetadataFields returns a
+ * non-empty array first.
  */
 export function setSectionMetadataFields(html, sectionIndex, fields) {
   const section = findSection(html, sectionIndex);
@@ -531,9 +548,63 @@ export function setSectionMetadataFields(html, sectionIndex, fields) {
   }
   let result = html;
   for (const field of fields) {
-    result = setBlockCells(result, 'section-metadata', index, [field.keyHtml, field.value], field.rowIndex);
+    const valueHtml = field.valueWrapperTag ? `<${field.valueWrapperTag}>${field.value}</${field.valueWrapperTag}>` : field.value;
+    result = setBlockCells(result, 'section-metadata', index, [field.keyHtml, valueHtml], field.rowIndex);
   }
   return result;
+}
+
+/**
+ * Add a new key/value row to a section's section-metadata block, creating
+ * the block itself (as the section's last top-level child, matching where
+ * decoration expects to find it - see insertBlockIntoSection's known
+ * limitation above) if the section doesn't have one yet. The value is
+ * wrapped in a `<p>`, matching how DA's own editor authors table cell text
+ * (see getSectionMetadataFields), so it round-trips through DA the same way
+ * a hand-authored row would. Only supports the div block form for appending
+ * to an existing block - a table-form section-metadata (rare, likely
+ * hand-imported content) isn't a shape this project authors fresh, so
+ * appending to it isn't supported.
+ */
+export function addSectionMetadataField(html, sectionIndex, key, value) {
+  const section = findSection(html, sectionIndex);
+  const { occurrences, index } = findSectionMetadataOccurrence(html, section);
+  const rowHtml = `<div><div>${key}</div><div><p>${value}</p></div></div>`;
+  if (index === -1) {
+    const blockHtml = `<div class="section-metadata">${rowHtml}</div>`;
+    return insertBlockIntoSection(html, sectionIndex, getSectionChildCount(html, sectionIndex), blockHtml);
+  }
+  const occurrence = occurrences[index];
+  if (occurrence.form !== 'div') {
+    throw new Error('Adding a section-metadata field is only supported for the div block form');
+  }
+  return html.slice(0, occurrence.node.closeStart) + rowHtml + html.slice(occurrence.node.closeStart);
+}
+
+/**
+ * Remove one section-metadata row by index (as obtained from
+ * getSectionMetadataFields). Removing the block's only remaining row removes
+ * the whole block, rather than leaving an empty one behind.
+ */
+export function removeSectionMetadataField(html, sectionIndex, rowIndex) {
+  const section = findSection(html, sectionIndex);
+  const { occurrences, index } = findSectionMetadataOccurrence(html, section);
+  if (index === -1) {
+    throw new Error(`Section ${sectionIndex} has no section-metadata block`);
+  }
+  const occurrence = occurrences[index];
+  const rowsAndCells = getRowsAndCells(occurrence);
+  const row = rowsAndCells[rowIndex];
+  if (!row) {
+    throw new Error(`Section ${sectionIndex}'s section-metadata has no row ${rowIndex}`);
+  }
+  if (rowsAndCells.length === 1) {
+    return deleteBlockOccurrence(html, 'section-metadata', index);
+  }
+  if (occurrence.form !== 'div') {
+    throw new Error('Removing a section-metadata field is only supported for the div block form');
+  }
+  return html.slice(0, row.row.openStart) + html.slice(row.row.closeEnd);
 }
 
 /* --------------------------------------------------------- inserting blocks */
@@ -586,6 +657,42 @@ export function deleteBlockOccurrence(html, blockName, occurrenceIndex) {
   return html.slice(0, occurrence.node.openStart) + html.slice(occurrence.node.closeEnd);
 }
 
+/**
+ * Relocate an existing block occurrence to a new position: within its
+ * current section (reorder) or into a different section (move across).
+ * `target` is `{ sectionIndex, insertBeforeIndex }`, expressed in the
+ * ORIGINAL (pre-move) child ordering of the destination section - the same
+ * shape/semantics insertBlockIntoSection (and a live-DOM drop-target
+ * calculation) already use. Moving a block back onto its own original slot
+ * is a logical no-op, mirroring moveSection's index-shift handling below.
+ */
+export function moveBlockOccurrence(html, blockName, occurrenceIndex, target) {
+  const occurrences = listOccurrences(html, blockName);
+  const occurrence = occurrences[occurrenceIndex];
+  if (!occurrence) {
+    throw new Error(`Block "${blockName}" occurrence ${occurrenceIndex} not found`);
+  }
+  const blockHtml = occurrence.node.outerHTML;
+
+  const { sections } = findAllSections(html);
+  const fromSectionIndex = sections.findIndex((s) => withinRange(occurrence.node, s));
+  if (fromSectionIndex === -1) {
+    throw new Error(`Block "${blockName}" occurrence ${occurrenceIndex} is not inside any section`);
+  }
+  const fromSection = sections[fromSectionIndex];
+  const relativeStart = occurrence.node.openStart - fromSection.openEnd;
+  const fromChildIndex = splitTopLevelElementRanges(fromSection.innerHTML)
+    .filter((range) => range.start < relativeStart).length;
+
+  const removedHtml = html.slice(0, occurrence.node.openStart) + html.slice(occurrence.node.closeEnd);
+
+  const insertBeforeIndex = (fromSectionIndex === target.sectionIndex && target.insertBeforeIndex > fromChildIndex)
+    ? target.insertBeforeIndex - 1
+    : target.insertBeforeIndex;
+
+  return insertBlockIntoSection(removedHtml, target.sectionIndex, insertBeforeIndex, blockHtml);
+}
+
 /* ------------------------------------------------------------- reordering sections */
 
 /** Number of sections (direct div children of `<main>`) in the document. */
@@ -613,6 +720,20 @@ export function moveSection(html, fromIndex, toBeforeIndex) {
   sectionHtmls.splice(insertAt, 0, moved);
   const rebuilt = sectionHtmls.join('\n');
   return html.slice(0, main.openEnd) + rebuilt + html.slice(main.closeStart);
+}
+
+/**
+ * Remove a whole section (and everything inside it - blocks and default
+ * content alike) from the document. Every other section is preserved
+ * byte-for-byte and keeps its original relative order.
+ */
+export function deleteSection(html, sectionIndex) {
+  const { sections } = findAllSections(html);
+  const section = sections[sectionIndex];
+  if (!section) {
+    throw new Error(`Section ${sectionIndex} not found`);
+  }
+  return html.slice(0, section.openStart) + html.slice(section.closeEnd);
 }
 
 /**

@@ -65,7 +65,12 @@ earlier phase's acceptance criteria aren't met.
   lightweight, purpose-built overlay for a narrower workflow (e.g. rapid QA/demo
   editing of specific block types).
 - No WYSIWYG rich-text editing. Editing is field-based (map block cell values to
-  form inputs), not `contenteditable` free-form editing of arbitrary HTML.
+  form inputs), not `contenteditable` free-form editing of arbitrary HTML. **Deviation:**
+  once a block has a content model (`public/lib/content-models.js`) marking a field
+  `richtext`, that one field *is* a `contenteditable` box with a minimal Bold/Italic/
+  Link toolbar — see `renderRichTextField` in `public/overlay.js`. `hero`'s `heroText`
+  is the first such field; every other field on every other block remains plain
+  field-based editing.
 - No multi-user concurrency handling (locking, conflict resolution). Single editor,
   single session, last-write-wins.
 - No new EDS block code. This tool only edits *content* (the DA-authored HTML),

@@ -35,6 +35,7 @@ const STATIC_FILES = {
   '/__editor/lib/da-source.js': { file: 'lib/da-source.js', type: 'text/javascript; charset=utf-8' },
   '/__editor/lib/admin-api.js': { file: 'lib/admin-api.js', type: 'text/javascript; charset=utf-8' },
   '/__editor/lib/block-templates.js': { file: 'lib/block-templates.js', type: 'text/javascript; charset=utf-8' },
+  '/__editor/lib/content-models.js': { file: 'lib/content-models.js', type: 'text/javascript; charset=utf-8' },
 };
 
 // Headers that must never be blindly forwarded because they describe the

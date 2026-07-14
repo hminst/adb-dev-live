@@ -71,18 +71,22 @@ function handleBackground(background, section) {
 }
 
 async function handleStyle(text, section) {
-  const styles = text.split(', ').map((style) => style.replaceAll(' ', '-'));
-  section.classList.add(...styles);
+  // classList.add throws a DOMException on an empty token - guard against
+  // stray/trailing commas or double spaces in hand-authored (or
+  // programmatically edited) content producing one, rather than crashing
+  // this block's whole decoration.
+  const styles = text.split(',').map((style) => style.trim().replaceAll(' ', '-')).filter(Boolean);
+  if (styles.length) section.classList.add(...styles);
 }
 
 async function handleLayout(text, section, type) {
-  if (text === '0') return;
+  if (text === '0' || !text.trim()) return;
   if (type === 'grid') section.classList.add('grid');
-  section.classList.add(`${type}-${text}`);
+  section.classList.add(`${type}-${text.trim().replaceAll(' ', '-')}`);
 }
 
 const getMetadata = (el) => [...el.childNodes].reduce((rdx, row) => {
-  if (row.children) {
+  if (row.children && row.children.length > 1) {
     const key = row.children[0].textContent.trim().toLowerCase();
     const content = row.children[1];
     const text = content.textContent.trim().toLowerCase();

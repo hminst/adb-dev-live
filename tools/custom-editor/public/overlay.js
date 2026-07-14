@@ -1,14 +1,15 @@
 import {
   getBlockFields, setBlockFields,
   getSectionDefaultContentFields, setSectionDefaultContentFields, deleteSectionDefaultContentElement,
-  getSectionMetadataFields, setSectionMetadataFields,
+  getSectionMetadataFields, setSectionMetadataFields, addSectionMetadataField, removeSectionMetadataField,
   insertBlockIntoSection, deleteBlockOccurrence,
-  moveSection, insertSection,
+  moveSection, insertSection, deleteSection, moveBlockOccurrence,
   normalizeBlockName,
 } from './lib/block-patch.js';
 import { getSource, putSource, DaAuthError } from './lib/da-source.js';
 import { triggerPreview } from './lib/admin-api.js';
 import { BLOCK_TEMPLATES } from './lib/block-templates.js';
+import { applyContentModel, applySectionMetadataModel, SECTION_METADATA_MODELS } from './lib/content-models.js';
 
 const TOKEN_STORAGE_KEY = 'custom-editor:da-token';
 
@@ -90,10 +91,12 @@ function getSectionAllChildren(sectionEl) {
  * block (by class) takes priority; otherwise, if it's inside a section, the
  * *specific* default-content element (not the whole section or wrapper) the
  * target is inside - so selecting one heading doesn't also surface every
- * other paragraph in that section. Returns null for anything outside
- * `<main>`'s sections entirely (header, footer, our own chrome), or for a
- * click that lands on section padding/whitespace that isn't part of any
- * specific default-content element.
+ * other paragraph in that section; failing that, the section itself (its own
+ * padding/whitespace, or a section made up entirely of blocks with no
+ * default-content to click) - selecting the section is how its own
+ * properties (section-metadata: style/grid/gap/spacing/...) are edited, see
+ * fieldsIo. Returns null for anything outside `<main>`'s sections entirely
+ * (header, footer, our own chrome).
  */
 function resolveEditable(rawTarget) {
   const blockEl = rawTarget.closest(BLOCK_SELECTOR);
@@ -102,12 +105,13 @@ function resolveEditable(rawTarget) {
   if (!section) return null;
   const contentElements = getSectionDefaultContentElements(section);
   const elementIndex = contentElements.findIndex((el) => el === rawTarget || el.contains(rawTarget));
-  if (elementIndex === -1) return null;
-  return { type: 'default-content', el: contentElements[elementIndex], elementIndex };
+  if (elementIndex !== -1) return { type: 'default-content', el: contentElements[elementIndex], elementIndex };
+  return { type: 'section', el: section };
 }
 
 function getLabel(selection) {
   if (selection.type === 'block') return getBlockName(selection.el);
+  if (selection.type === 'section') return `section ${sectionOrdinal(selection.el) + 1}`;
   return `default content (${selection.el.tagName.toLowerCase()})`;
 }
 
@@ -138,6 +142,7 @@ function buildChrome() {
   const palette = el('div', { id: 'ce-palette' });
   const dropIndicator = el('div', { id: 'ce-drop-indicator' });
   const sectionHandle = el('div', { id: 'ce-section-handle', draggable: true, textContent: '⠿⠿' });
+  const blockHandle = el('div', { id: 'ce-block-handle', draggable: true, textContent: '⠿' });
   document.body.append(
     hoverBox,
     hoverLabel,
@@ -147,9 +152,10 @@ function buildChrome() {
     palette,
     dropIndicator,
     sectionHandle,
+    blockHandle,
   );
   return {
-    hoverBox, hoverLabel, selectionBox, selectionLabel, inspector, palette, dropIndicator, sectionHandle,
+    hoverBox, hoverLabel, selectionBox, selectionLabel, inspector, palette, dropIndicator, sectionHandle, blockHandle,
   };
 }
 
@@ -175,6 +181,22 @@ function hideBox(box, label) {
   label.style.display = 'none';
 }
 
+/**
+ * Select `resolved` and open its inspector - shared between the generic
+ * click-anywhere handler below and the section grip handle's own click
+ * (see setupSectionDragHandle), which is the only reliable way to select a
+ * section that has no exposed pixel of its own left to click (e.g. it has
+ * no `grid` set yet, so its blocks stack full-width and cover it edge to
+ * edge - exactly the case where a user most needs to select the section to
+ * go fix that).
+ */
+function selectUnit(chrome, resolved) {
+  if (sameSelection(resolved, selected)) return;
+  selected = resolved;
+  positionBox(chrome.selectionBox, chrome.selectionLabel, resolved.el, getLabel(resolved));
+  openInspector(chrome, resolved);
+}
+
 function setupHoverAndSelection(chrome) {
   const reposition = () => {
     if (hovered) positionBox(chrome.hoverBox, chrome.hoverLabel, hovered.el, getLabel(hovered));
@@ -197,7 +219,11 @@ function setupHoverAndSelection(chrome) {
   });
 
   document.addEventListener('click', (event) => {
-    if (event.target.closest('#ce-inspector')) return; // interacting with our own panel, not the page
+    // Our own chrome, not the page - in particular the section/block grip
+    // handles have their own click handling (selecting/dragging), which
+    // this capture-phase listener would otherwise pre-empt since it runs
+    // before the handle's own (bubble-phase) click listener ever fires.
+    if (event.target.closest('#ce-inspector, #ce-section-handle, #ce-block-handle')) return;
     const resolved = resolveEditable(event.target);
     if (!resolved) {
       selected = null;
@@ -207,9 +233,7 @@ function setupHoverAndSelection(chrome) {
     }
     if (sameSelection(resolved, selected)) return; // let inline editing / normal interaction inside the already-selected unit proceed
     event.preventDefault();
-    selected = resolved;
-    positionBox(chrome.selectionBox, chrome.selectionLabel, resolved.el, getLabel(resolved));
-    openInspector(chrome, resolved);
+    selectUnit(chrome, resolved);
   }, true);
 
   window.addEventListener('scroll', reposition, true);
@@ -255,6 +279,91 @@ function renderStatus(container, kind, message) {
   if (existing) existing.remove();
   if (!message) return;
   container.append(el('div', { className: `ce-status ce-${kind}`, textContent: message }));
+}
+
+/**
+ * Redecorate a block in place after one of its fields is saved, instead of a
+ * full page reload: refetch the page (now that the preview has propagated),
+ * pull out the same block occurrence in its fresh, pre-decoration markup,
+ * swap it in at the same DOM position, and re-run its own decorate script -
+ * the same two steps `loadBlock` (this project's `ak.js`) does on first
+ * load. A block's decorate function generally assumes it's starting from
+ * that raw div/cell shape, not whatever it left behind last time it ran, so
+ * re-running decorate on the still-decorated live element directly isn't
+ * safe - the fresh fetch is what supplies a clean starting point.
+ */
+async function redecorateBlock(selection) {
+  const name = getBlockName(selection.el);
+  const normalizedName = normalizeBlockName(name);
+  const ordinal = blockOrdinal(selection.el);
+  const res = await fetch(window.location.pathname + window.location.search, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Could not refetch page (${res.status})`);
+  const freshDoc = new DOMParser().parseFromString(await res.text(), 'text/html');
+  const freshBlock = [...freshDoc.querySelectorAll(BLOCK_SELECTOR)]
+    .filter((candidate) => normalizeBlockName(getBlockName(candidate)) === normalizedName)[ordinal];
+  if (!freshBlock) throw new Error('Could not locate refreshed block markup');
+  const newBlock = document.importNode(freshBlock, true);
+  selection.el.replaceWith(newBlock);
+  selection.el = newBlock;
+  newBlock.dataset.blockName = name; // loadBlock (ak.js) sets this too - some block JS/CSS may depend on it
+  const blockPath = `/blocks/${name}/${name}`;
+  if (!document.querySelector(`head > link[href="${blockPath}.css"]`)) {
+    document.head.append(el('link', { rel: 'stylesheet', href: `${blockPath}.css` }));
+  }
+  await (await import(`${blockPath}.js`)).default(newBlock);
+  return newBlock;
+}
+
+/**
+ * Redecorate a section in place after one of its section-metadata settings
+ * is added/removed/changed, instead of a full page reload - same idea as
+ * `redecorateBlock` above, but for the section wrapper itself: refetch the
+ * page, pull the same section occurrence in its fresh, pre-decoration
+ * markup, then run it through `loadArea` (from `ak.js`, exported unmodified)
+ * before swapping it into the live page.
+ *
+ * `loadArea` normally decorates every top-level section of `document`, but
+ * its `decorateSections(area, isDoc)` helper switches to a `:scope > div`
+ * selector whenever `area` isn't `document` itself - so passing a detached
+ * wrapper `<div>` containing just this one fresh section runs the exact same
+ * decoration/loadBlock pipeline scoped to it alone, with nothing exported
+ * from ak.js beyond the `loadArea` entry point every page already uses.
+ */
+async function redecorateSection(selection) {
+  const ordinal = sectionOrdinal(selection.el);
+  const res = await fetch(window.location.pathname + window.location.search, { cache: 'no-store' });
+  if (!res.ok) throw new Error(`Could not refetch page (${res.status})`);
+  const freshDoc = new DOMParser().parseFromString(await res.text(), 'text/html');
+  const freshSection = [...freshDoc.querySelectorAll(SECTION_SELECTOR)][ordinal];
+  if (!freshSection) throw new Error('Could not locate refreshed section markup');
+  const newSection = document.importNode(freshSection, true);
+  const { loadArea } = await import('/scripts/ak.js');
+  const wrapper = document.createElement('div');
+  wrapper.append(newSection);
+  await loadArea({ area: wrapper });
+  selection.el.replaceWith(newSection);
+  selection.el = newSection;
+  return newSection;
+}
+
+/**
+ * Shared tail end of every block/section-metadata save: wait for the preview
+ * to propagate, redecorate in place (via `redecorateBlock`/`redecorateSection`
+ * above) and reopen the inspector against the fresh element, falling back to
+ * the old "reload the page" message if the redecoration itself fails for any
+ * reason (e.g. the block/section couldn't be relocated in the refetched page).
+ */
+async function saveAndRedecorate(chrome, selection, redecorate, successPrefix) {
+  renderStatus(chrome.inspector, 'info', `${successPrefix} Redecorating…`);
+  try {
+    await new Promise((resolve) => { setTimeout(resolve, 400); }); // let the preview propagate
+    await redecorate(selection);
+    positionBox(chrome.selectionBox, chrome.selectionLabel, selection.el, getLabel(selection));
+    openInspector(chrome, selection); // rebuilds the panel (+ inline bindings, for a block) against the fresh element
+  } catch (err) {
+    console.error('redecorate failed', err); // TEMP DEBUG
+    renderStatus(chrome.inspector, 'ok', `${successPrefix} Reload the page to see the update.`);
+  }
 }
 
 /**
@@ -415,14 +524,18 @@ function bindInlineEditing(target, fields, fieldRefs, markDirty, onBlur) {
       field.value = node.innerHTML;
       markDirty();
       if (ref?.textarea) ref.textarea.value = field.value;
+      else if (ref?.richtext) ref.richtext.innerHTML = field.value;
     };
     node.addEventListener('input', onNodeInput);
     node.addEventListener('blur', onBlur);
 
     let onPanelInput;
-    if (ref?.textarea) {
-      onPanelInput = () => { node.innerHTML = ref.textarea.value; };
-      ref.textarea.addEventListener('input', onPanelInput);
+    const panelEditor = ref?.textarea ?? ref?.richtext;
+    if (panelEditor) {
+      onPanelInput = () => {
+        node.innerHTML = ref.textarea ? ref.textarea.value : ref.richtext.innerHTML;
+      };
+      panelEditor.addEventListener('input', onPanelInput);
     }
 
     teardown.push(() => {
@@ -430,7 +543,7 @@ function bindInlineEditing(target, fields, fieldRefs, markDirty, onBlur) {
       node.classList.remove('ce-inline-editable');
       node.removeEventListener('input', onNodeInput);
       node.removeEventListener('blur', onBlur);
-      if (onPanelInput) ref.textarea.removeEventListener('input', onPanelInput);
+      if (onPanelInput) panelEditor.removeEventListener('input', onPanelInput);
     });
   }
 
@@ -468,7 +581,7 @@ function bindInlineEditing(target, fields, fieldRefs, markDirty, onBlur) {
   };
 }
 
-function renderTextField(field, index, markDirty, onBlur) {
+function renderTextField(field, index, markDirty, onBlur, labelOverride) {
   const textarea = el('textarea', { value: field.value });
   textarea.addEventListener('input', () => {
     field.value = textarea.value;
@@ -476,13 +589,97 @@ function renderTextField(field, index, markDirty, onBlur) {
   });
   textarea.addEventListener('blur', onBlur);
   const fieldEl = el('div', { className: 'ce-field' }, [
-    el('label', { textContent: `Text ${index + 1}` }),
+    el('label', { textContent: labelOverride ?? `Text ${index + 1}` }),
     textarea,
   ]);
   return { fieldEl, refs: { textarea, fieldEl } };
 }
 
-function renderImageField(field, index, markDirty, onBlur) {
+/**
+ * A `heading` content-model field: the same raw-value textarea as a plain
+ * text field (write-back is unchanged - still just `field.value`), plus a
+ * `<select>` restricted to `headingLevels` and bound to `field.wrapperTag`.
+ * Changing the level is structural (an element's tag name can't be mutated
+ * live the way a value can) - `onLevelChange` (save + reload) is the
+ * caller's job, not this render function's.
+ */
+function renderHeadingField(field, label, headingLevels, markDirty, onBlur, onLevelChange) {
+  const textarea = el('textarea', { value: field.value });
+  textarea.addEventListener('input', () => { field.value = textarea.value; markDirty(); });
+  textarea.addEventListener('blur', onBlur);
+
+  // If existing content was authored outside the model's allowed levels,
+  // keep it selected rather than silently defaulting to the first option.
+  const levels = headingLevels.includes(field.wrapperTag) ? headingLevels : [field.wrapperTag, ...headingLevels];
+  const select = el('select', {}, levels.map((level) => el('option', {
+    value: level,
+    textContent: level.toUpperCase(),
+    selected: level === field.wrapperTag,
+  })));
+  select.addEventListener('change', () => {
+    field.wrapperTag = select.value;
+    markDirty();
+    onLevelChange();
+  });
+
+  const fieldEl = el('div', { className: 'ce-field' }, [
+    el('label', { textContent: label }),
+    textarea,
+    el('label', { textContent: 'Heading level' }),
+    select,
+  ]);
+  return { fieldEl, refs: { textarea, fieldEl } };
+}
+
+/**
+ * A `richtext` content-model field: a contenteditable box (value = raw
+ * innerHTML, same convention as a text field) with a minimal Bold/Italic/
+ * Link toolbar via `document.execCommand`. Browsers may produce
+ * presentational `<b>`/`<i>` rather than `<strong>`/`<em>` - harmless, since
+ * DA's cell-normalization pass rewrites those to their semantic equivalents
+ * on preview/publish regardless (da-content skill §3.9).
+ */
+function renderRichTextField(field, label, markDirty, onBlur) {
+  const editor = el('div', {
+    className: 'ce-richtext', contentEditable: 'true', innerHTML: field.value,
+  });
+  const sync = () => { field.value = editor.innerHTML; markDirty(); };
+  const exec = (command, value = null) => {
+    editor.focus();
+    document.execCommand(command, false, value);
+    sync();
+  };
+  const toolbar = el('div', { className: 'ce-richtext-toolbar' }, [
+    el('button', {
+      type: 'button', className: 'ce-rt-btn', textContent: 'B', title: 'Bold', onclick: (e) => { e.preventDefault(); exec('bold'); },
+    }),
+    el('button', {
+      type: 'button', className: 'ce-rt-btn', textContent: 'I', title: 'Italic', onclick: (e) => { e.preventDefault(); exec('italic'); },
+    }),
+    el('button', {
+      type: 'button',
+      className: 'ce-rt-btn',
+      textContent: 'Link',
+      title: 'Link',
+      onclick: (e) => {
+        e.preventDefault();
+        // eslint-disable-next-line no-alert
+        const url = window.prompt('Link URL');
+        if (url) exec('createLink', url);
+      },
+    }),
+  ]);
+  editor.addEventListener('input', sync);
+  editor.addEventListener('blur', onBlur);
+  const fieldEl = el('div', { className: 'ce-field' }, [
+    el('label', { textContent: label }),
+    toolbar,
+    editor,
+  ]);
+  return { fieldEl, refs: { richtext: editor, fieldEl } };
+}
+
+function renderImageField(field, index, markDirty, onBlur, labelOverride, altLabelOverride) {
   const srcInput = el('input', { type: 'text', value: field.src, placeholder: 'Image URL' });
   const altInput = el('input', { type: 'text', value: field.alt, placeholder: 'Alt text' });
   srcInput.addEventListener('change', () => { field.src = srcInput.value; markDirty(); });
@@ -490,24 +687,91 @@ function renderImageField(field, index, markDirty, onBlur) {
   srcInput.addEventListener('blur', onBlur);
   altInput.addEventListener('blur', onBlur);
   const fieldEl = el('div', { className: 'ce-field' }, [
-    el('label', { textContent: `Image ${index + 1}` }),
+    el('label', { textContent: labelOverride ?? `Image ${index + 1}` }),
     srcInput,
-    el('label', { textContent: 'Alt text' }),
+    el('label', { textContent: altLabelOverride ?? 'Alt text' }),
     altInput,
   ]);
   return { fieldEl, refs: { srcInput, altInput, fieldEl } };
 }
 
-function renderSettingField(field, markDirty, onBlur) {
+function settingFieldLabelRow(field, onRemove) {
+  const labelRow = el('div', { className: 'ce-field-label-row' }, [
+    el('label', { textContent: field.model?.label ?? field.key }),
+  ]);
+  if (onRemove) {
+    const removeBtn = el('button', { className: 'ce-field-remove', title: `Remove "${field.key}"`, textContent: '×' });
+    removeBtn.addEventListener('click', onRemove);
+    labelRow.append(removeBtn);
+  }
+  return labelRow;
+}
+
+/** Plain free-text setting field - the fallback for a key with no registered model (e.g. background-color, or a hand-authored one-off). */
+function renderSettingField(field, markDirty, onBlur, onRemove) {
   const input = el('input', { type: 'text', value: field.value });
   input.addEventListener('input', () => { field.value = input.value; markDirty(); });
   input.addEventListener('blur', onBlur);
-  const fieldEl = el('div', { className: 'ce-field' }, [
-    el('label', { textContent: field.key }),
-    input,
-  ]);
+  const fieldEl = el('div', { className: 'ce-field' }, [settingFieldLabelRow(field, onRemove), input]);
   return { fieldEl, refs: { input, fieldEl } };
 }
+
+/**
+ * Single-value setting field (grid/gap/spacing/container) - a dropdown of
+ * the model's known options. The field's current value is always included
+ * even if it isn't one of the known options (a legacy or hand-authored
+ * value), so selecting/saving never silently changes or discards it.
+ */
+function renderSettingSelectField(field, markDirty, onBlur, onRemove) {
+  const { options } = field.model;
+  const allOptions = options.includes(field.value) ? options : [field.value, ...options];
+  const select = el('select', {}, allOptions.map((opt) => el('option', {
+    value: opt,
+    textContent: opt === '' ? '(none)' : opt,
+    selected: opt === field.value,
+  })));
+  select.addEventListener('change', () => {
+    field.value = select.value;
+    markDirty();
+    onBlur();
+  });
+  const fieldEl = el('div', { className: 'ce-field' }, [settingFieldLabelRow(field, onRemove), select]);
+  return { fieldEl, refs: { select, fieldEl } };
+}
+
+/**
+ * Multi-value setting field (style) - a checkbox per known option; the
+ * field's raw value is comma-separated tokens (see
+ * blocks/section-metadata/section-metadata.js's handleStyle). Any existing
+ * token that isn't one of the known options is preserved untouched (kept in
+ * the underlying set, just never shown as its own checkbox) rather than
+ * dropped when another checkbox is toggled.
+ */
+function renderSettingMultiSelectField(field, markDirty, onBlur, onRemove) {
+  const { options } = field.model;
+  const selected = new Set(field.value.split(',').map((v) => v.trim()).filter(Boolean));
+  const checkboxes = options.map((opt) => {
+    const checkbox = el('input', { type: 'checkbox', checked: selected.has(opt) });
+    checkbox.addEventListener('change', () => {
+      if (checkbox.checked) selected.add(opt); else selected.delete(opt);
+      field.value = [...selected].join(', ');
+      markDirty();
+      onBlur();
+    });
+    return el('label', { className: 'ce-checkbox-label' }, [checkbox, document.createTextNode(opt)]);
+  });
+  const fieldEl = el('div', { className: 'ce-field' }, [settingFieldLabelRow(field, onRemove), ...checkboxes]);
+  return { fieldEl, refs: { fieldEl } };
+}
+
+/**
+ * section-metadata keys blocks/section-metadata/section-metadata.js knows
+ * how to handle (style, grid, gap, spacing, container all become CSS
+ * classes; background-color/background-image/background are handled
+ * together by the same code path - background-color is offered here as the
+ * one representative entry point for that group).
+ */
+const SECTION_METADATA_KEYS = ['style', 'grid', 'gap', 'spacing', 'container', 'background-color'];
 
 /** Read fields from + write fields back to source, branching on selection type. */
 function fieldsIo(selection) {
@@ -515,35 +779,30 @@ function fieldsIo(selection) {
     const blockName = getBlockName(selection.el);
     const ordinal = blockOrdinal(selection.el);
     return {
-      get: (source) => getBlockFields(source, blockName, ordinal),
+      get: (source) => applyContentModel(blockName, getBlockFields(source, blockName, ordinal)),
       set: (source, fields) => setBlockFields(source, blockName, ordinal, fields),
     };
   }
-  // Section: just the one default-content element the user selected (not
-  // every paragraph/heading in the section) plus, if present, the
-  // section-metadata block's key/value rows (style/grid/gap/spacing/... -
-  // these become CSS classes on the section element, e.g. class="section
-  // center container grid-4 gap-xl spacing-xxl", and the block removes
-  // itself from the DOM once decorated, so it's only reachable through the
-  // source, not the page) - settings are section-wide, so they're shown
-  // regardless of which specific element was selected.
+  if (selection.type === 'section') {
+    // The section's own properties only (style/grid/gap/spacing/... - these
+    // become CSS classes on the section element, e.g. class="section center
+    // container grid-4 gap-xl spacing-xxl", via a section-metadata block
+    // that removes itself from the DOM once decorated, so it's only
+    // reachable through the source, not the page) - not any content inside
+    // it, which is edited by selecting that specific content instead.
+    const ordinal = sectionOrdinal(selection.el);
+    return {
+      get: (source) => applySectionMetadataModel(getSectionMetadataFields(source, ordinal).map((f) => ({ ...f, kind: 'setting' }))),
+      set: (source, fields) => setSectionMetadataFields(source, ordinal, fields),
+    };
+  }
+  // default-content: just the one element the user selected, not every
+  // paragraph/heading in the section.
   const ordinal = sectionOrdinal(selection.el);
   return {
-    get: (source) => [
-      ...getSectionDefaultContentFields(source, ordinal)
-        .filter((f) => f.elementIndex === selection.elementIndex)
-        .map((f) => ({ ...f, group: 'content' })),
-      ...getSectionMetadataFields(source, ordinal).map((f) => ({ ...f, group: 'settings', kind: 'setting' })),
-    ],
-    set: (source, fields) => {
-      const contentFields = fields.filter((f) => f.group === 'content');
-      const settingsFields = fields.filter((f) => f.group === 'settings');
-      let result = setSectionDefaultContentFields(source, ordinal, contentFields);
-      if (settingsFields.length > 0) {
-        result = setSectionMetadataFields(result, ordinal, settingsFields);
-      }
-      return result;
-    },
+    get: (source) => getSectionDefaultContentFields(source, ordinal)
+      .filter((f) => f.elementIndex === selection.elementIndex),
+    set: (source, fields) => setSectionDefaultContentFields(source, ordinal, fields),
   };
 }
 
@@ -574,7 +833,7 @@ async function loadFieldsSection(chrome, selection) {
   }
 
   section.innerHTML = '';
-  if (fields.length === 0) {
+  if (fields.length === 0 && selection.type !== 'section') {
     section.append(el('div', { className: 'ce-status ce-info', textContent: 'Nothing editable found here.' }));
     return;
   }
@@ -608,7 +867,13 @@ async function loadFieldsSection(chrome, selection) {
       await triggerPreview({
         daOrg: config.daOrg, daRepo: config.daRepo, daRef: config.daRef, path: pagePath, token: getToken(),
       });
-      renderStatus(chrome.inspector, 'ok', 'Saved. Reload the page to see the update.');
+      if (selection.type === 'block') {
+        await saveAndRedecorate(chrome, selection, redecorateBlock, 'Saved.');
+      } else if (selection.type === 'section') {
+        await saveAndRedecorate(chrome, selection, redecorateSection, 'Saved.');
+      } else {
+        renderStatus(chrome.inspector, 'ok', 'Saved. Reload the page to see the update.');
+      }
     } catch (err) {
       if (err instanceof DaAuthError) {
         setToken('');
@@ -626,35 +891,130 @@ async function loadFieldsSection(chrome, selection) {
   const fieldRefs = new Map(); // field -> { textarea } or { srcInput, altInput, fieldEl } or { input, fieldEl }
   let textCount = 0;
   let imageCount = 0;
-  let settingsHeaderShown = false;
+  if (selection.type === 'section') {
+    section.append(el('div', { className: 'ce-field-group-label', textContent: 'Section settings' }));
+  }
   for (const field of fields) {
-    if (field.kind === 'setting' && !settingsHeaderShown) {
-      section.append(el('div', { className: 'ce-field-group-label', textContent: 'Section settings' }));
-      settingsHeaderShown = true;
-    }
     let rendered;
-    if (field.kind === 'image') rendered = renderImageField(field, imageCount++, markDirty, saveFields);
-    else if (field.kind === 'setting') rendered = renderSettingField(field, markDirty, saveFields);
-    else rendered = renderTextField(field, textCount++, markDirty, saveFields);
+    if (field.model?.kind === 'heading') {
+      // Heading fields only ever come from a block's content model (hero/card
+      // - see fieldsIo), so saveFields' own block redecoration (below) is
+      // enough to show the new tag; no separate reload needed here.
+      rendered = renderHeadingField(field, field.model.label, field.model.headingLevels, markDirty, saveFields, () => {
+        saveFields({ force: true });
+      });
+    } else if (field.model?.kind === 'richtext') {
+      rendered = renderRichTextField(field, field.model.label, markDirty, saveFields);
+    } else if (field.kind === 'image') {
+      rendered = renderImageField(field, imageCount++, markDirty, saveFields, field.model?.label, field.model?.altLabel);
+    } else if (field.kind === 'setting') {
+      const ordinal = sectionOrdinal(selection.el);
+      const onRemove = async () => {
+        // eslint-disable-next-line no-alert
+        if (!window.confirm(`Remove the "${field.key}" setting? This can't be undone from here.`)) return;
+        renderStatus(chrome.inspector, 'info', 'Removing…');
+        try {
+          const currentSource = await getSource({
+            daOrg: config.daOrg, daRepo: config.daRepo, path: pagePath, token: getToken(),
+          });
+          const updatedSource = removeSectionMetadataField(currentSource, ordinal, field.rowIndex);
+          await putSource({
+            daOrg: config.daOrg, daRepo: config.daRepo, path: pagePath, html: updatedSource, token: getToken(),
+          });
+          await triggerPreview({
+            daOrg: config.daOrg, daRepo: config.daRepo, daRef: config.daRef, path: pagePath, token: getToken(),
+          });
+          await saveAndRedecorate(chrome, selection, redecorateSection, 'Removed.');
+        } catch (err) {
+          if (err instanceof DaAuthError) {
+            setToken('');
+            openInspector(chrome, selection);
+            return;
+          }
+          renderStatus(chrome.inspector, 'error', `Could not remove setting: ${err.message}`);
+        }
+      };
+      if (field.model?.kind === 'select') {
+        rendered = renderSettingSelectField(field, markDirty, saveFields, onRemove);
+      } else if (field.model?.kind === 'multiselect') {
+        rendered = renderSettingMultiSelectField(field, markDirty, saveFields, onRemove);
+      } else {
+        rendered = renderSettingField(field, markDirty, saveFields, onRemove);
+      }
+    } else {
+      rendered = renderTextField(field, textCount++, markDirty, saveFields, field.model?.label);
+    }
     fieldRefs.set(field, rendered.refs);
     section.append(rendered.fieldEl);
+  }
+
+  if (selection.type === 'section') {
+    const existingKeys = new Set(fields.map((f) => f.key));
+    const availableKeys = SECTION_METADATA_KEYS.filter((key) => !existingKeys.has(key));
+    if (availableKeys.length > 0) {
+      const keySelect = el('select', {}, availableKeys.map((key) => el('option', {
+        value: key, textContent: SECTION_METADATA_MODELS[key]?.label ?? key,
+      })));
+      const addBtn = el('button', { className: 'ce-secondary', textContent: 'Add setting' });
+      addBtn.addEventListener('click', async () => {
+        addBtn.disabled = true;
+        renderStatus(chrome.inspector, 'info', 'Adding…');
+        try {
+          const currentSource = await getSource({
+            daOrg: config.daOrg, daRepo: config.daRepo, path: pagePath, token: getToken(),
+          });
+          const updatedSource = addSectionMetadataField(currentSource, sectionOrdinal(selection.el), keySelect.value, '');
+          await putSource({
+            daOrg: config.daOrg, daRepo: config.daRepo, path: pagePath, html: updatedSource, token: getToken(),
+          });
+          await triggerPreview({
+            daOrg: config.daOrg, daRepo: config.daRepo, daRef: config.daRef, path: pagePath, token: getToken(),
+          });
+          await saveAndRedecorate(chrome, selection, redecorateSection, 'Added.');
+        } catch (err) {
+          if (err instanceof DaAuthError) {
+            setToken('');
+            openInspector(chrome, selection);
+            return;
+          }
+          renderStatus(chrome.inspector, 'error', `Could not add setting: ${err.message}`);
+          addBtn.disabled = false;
+        }
+      });
+      section.append(el('div', { className: 'ce-field' }, [keySelect, addBtn]));
+    }
   }
 
   activeInlineBinding = bindInlineEditing(selection.el, fields, fieldRefs, markDirty, saveFields);
 
   saveBtn.addEventListener('click', () => saveFields({ force: true }));
 
+  // Remove a single section-metadata setting via its own "×" button above
+  // instead - it isn't handled through this delete action.
   const deleteAction = selection.type === 'block'
     ? {
       label: 'Delete block',
       confirmText: `Delete this "${getBlockName(selection.el)}" block? This can't be undone from here.`,
       run: (source) => deleteBlockOccurrence(source, getBlockName(selection.el), blockOrdinal(selection.el)),
     }
-    : {
-      label: 'Delete',
-      confirmText: 'Delete this content? This can\'t be undone from here.',
-      run: (source) => deleteSectionDefaultContentElement(source, sectionOrdinal(selection.el), selection.elementIndex),
-    };
+    : selection.type === 'default-content'
+      ? {
+        label: 'Delete',
+        confirmText: 'Delete this content? This can\'t be undone from here.',
+        run: (source) => deleteSectionDefaultContentElement(source, sectionOrdinal(selection.el), selection.elementIndex),
+      }
+      : selection.type === 'section'
+        ? {
+          label: 'Delete section',
+          confirmText: 'Delete this whole section, including everything inside it? This can\'t be undone from here.',
+          run: (source) => deleteSection(source, sectionOrdinal(selection.el)),
+        }
+        : null;
+
+  if (!deleteAction) {
+    section.append(actions);
+    return;
+  }
 
   const deleteBtn = el('button', { className: 'ce-secondary ce-danger', textContent: deleteAction.label });
   deleteBtn.addEventListener('click', async () => {
@@ -752,6 +1112,16 @@ function openInspector(chrome, selection) {
  * insertBlockIntoSection's indexing. Returns null outside any section (drag
  * targets outside an existing section aren't supported yet - see
  * INSTRUCTIONS.md / block-patch.js for this scope limitation).
+ *
+ * Children aren't always stacked vertically - a "list of cards" is typically
+ * a grid row of same-width blocks sitting side by side. If clientY falls
+ * within a child's own vertical span, the drop is resolved *within that row*
+ * by comparing clientX against each same-row child's horizontal midpoint
+ * (before the first one the cursor is left of, or after the row's last child
+ * if the cursor is right of all of them) - never by falling through to a
+ * different row, since the cursor is verifiably still over this one.
+ * Otherwise (the cursor is in the vertical gap between rows/children), the
+ * target is resolved the simple vertical way, same as before.
  */
 function computeDropTarget(clientX, clientY) {
   const elAtPoint = document.elementFromPoint(clientX, clientY);
@@ -761,14 +1131,43 @@ function computeDropTarget(clientX, clientY) {
   const sectionIndex = [...document.querySelectorAll(SECTION_SELECTOR)].indexOf(section);
   const children = getSectionAllChildren(section);
   const sectionRect = section.getBoundingClientRect();
+  const rects = children.map((child) => child.getBoundingClientRect());
+
+  const rowAnchor = rects.findIndex((r) => clientY >= r.top && clientY <= r.bottom);
+
+  if (rowAnchor !== -1) {
+    const rowTop = rects[rowAnchor].top;
+    const rowIndices = [];
+    rects.forEach((r, i) => { if (Math.abs(r.top - rowTop) < 2) rowIndices.push(i); });
+
+    const before = rowIndices.find((i) => clientX < rects[i].left + rects[i].width / 2);
+    if (before !== undefined) {
+      const rect = rects[before];
+      return {
+        sectionIndex,
+        insertBeforeIndex: before,
+        indicatorRect: {
+          orientation: 'vertical', left: rect.left, top: rect.top, height: rect.height,
+        },
+      };
+    }
+    const last = rowIndices[rowIndices.length - 1];
+    const rect = rects[last];
+    return {
+      sectionIndex,
+      insertBeforeIndex: last + 1,
+      indicatorRect: {
+        orientation: 'vertical', left: rect.right, top: rect.top, height: rect.height,
+      },
+    };
+  }
 
   let insertBeforeIndex = children.length;
   let indicatorTop = sectionRect.bottom;
   for (let i = 0; i < children.length; i += 1) {
-    const rect = children[i].getBoundingClientRect();
-    if (clientY < rect.top + rect.height / 2) {
+    if (clientY < rects[i].top + rects[i].height / 2) {
       insertBeforeIndex = i;
-      indicatorTop = rect.top;
+      indicatorTop = rects[i].top;
       break;
     }
   }
@@ -776,15 +1175,32 @@ function computeDropTarget(clientX, clientY) {
   return {
     sectionIndex,
     insertBeforeIndex,
-    indicatorRect: { left: sectionRect.left, width: sectionRect.width, top: indicatorTop },
+    indicatorRect: {
+      orientation: 'horizontal', left: sectionRect.left, width: sectionRect.width, top: indicatorTop,
+    },
   };
 }
 
+/**
+ * Renders the drop indicator either as a horizontal line spanning a
+ * section's width (the default, and the only form computeSectionDropTarget
+ * produces) or, when computeDropTarget resolved the drop *within* a grid row
+ * of same-width children (e.g. a row of cards), as a vertical line spanning
+ * that row's height at the exact before/after boundary between two cards.
+ */
 function showDropIndicator(dropIndicator, rect) {
   dropIndicator.style.display = 'block';
   dropIndicator.style.left = `${rect.left}px`;
-  dropIndicator.style.width = `${rect.width}px`;
   dropIndicator.style.top = `${rect.top}px`;
+  if (rect.orientation === 'vertical') {
+    dropIndicator.style.width = '';
+    dropIndicator.style.height = `${rect.height}px`;
+    dropIndicator.classList.add('ce-drop-indicator--vertical');
+  } else {
+    dropIndicator.style.width = `${rect.width}px`;
+    dropIndicator.style.height = '';
+    dropIndicator.classList.remove('ce-drop-indicator--vertical');
+  }
 }
 
 /**
@@ -904,6 +1320,40 @@ async function moveDroppedSection(fromIndex, target, statusContainer) {
   }
 }
 
+async function moveDroppedBlock(blockName, occurrenceIndex, target, statusContainer) {
+  if (!target) return;
+
+  const token = getToken();
+  if (!token) {
+    renderPaletteStatus(statusContainer, 'error', 'Connect to DA above first to move blocks.');
+    return;
+  }
+
+  renderPaletteStatus(statusContainer, 'info', 'Moving block…');
+  const pagePath = window.location.pathname;
+  try {
+    const source = await getSource({
+      daOrg: config.daOrg, daRepo: config.daRepo, path: pagePath, token,
+    });
+    const updated = moveBlockOccurrence(source, blockName, occurrenceIndex, target);
+    await putSource({
+      daOrg: config.daOrg, daRepo: config.daRepo, path: pagePath, html: updated, token: getToken(),
+    });
+    await triggerPreview({
+      daOrg: config.daOrg, daRepo: config.daRepo, daRef: config.daRef, path: pagePath, token: getToken(),
+    });
+    renderPaletteStatus(statusContainer, 'ok', 'Block moved. Reloading…');
+    setTimeout(() => window.location.reload(), 400);
+  } catch (err) {
+    if (err instanceof DaAuthError) {
+      setToken('');
+      renderPaletteStatus(statusContainer, 'error', 'Your DA session expired - reconnect above.');
+      return;
+    }
+    renderPaletteStatus(statusContainer, 'error', `Could not move block: ${err.message}`);
+  }
+}
+
 function renderPaletteAuthSection(rerender) {
   const container = el('div', { className: 'ce-section' });
   if (getToken()) {
@@ -946,28 +1396,60 @@ function buildPalette(chrome) {
 }
 
 /**
- * Three distinct drag kinds share this page-level drag/drop wiring, told
+ * Auto-scrolls the window while dragging near the top/bottom viewport edge -
+ * native browser drag auto-scroll is inconsistent across engines, and
+ * without this a long page (e.g. moving a block between two sections far
+ * apart) may be impossible to reach without the drag stalling at whatever
+ * position happened to be on-screen when the drop was released.
+ */
+const AUTO_SCROLL_EDGE = 60;
+const AUTO_SCROLL_SPEED = 18;
+
+function autoScrollForDrag(clientY) {
+  if (clientY < AUTO_SCROLL_EDGE) {
+    window.scrollBy(0, -AUTO_SCROLL_SPEED);
+  } else if (clientY > window.innerHeight - AUTO_SCROLL_EDGE) {
+    window.scrollBy(0, AUTO_SCROLL_SPEED);
+  }
+}
+
+/**
+ * Recomputes the drop target fresh from the event's own clientX/clientY at
+ * decision time - used both live during dragover (to position the
+ * indicator) and again at drop (rather than trusting whatever the last
+ * dragover happened to cache), since dragover firing is throttled/coalesced
+ * by the browser and a fast final movement or an in-progress auto-scroll
+ * could otherwise leave a stale target from an earlier cursor position.
+ */
+function resolveDropTarget(event, isSectionMove, isAddSection) {
+  return (isSectionMove || isAddSection)
+    ? computeSectionDropTarget(event.clientY)
+    : computeDropTarget(event.clientX, event.clientY);
+}
+
+/**
+ * Four distinct drag kinds share this page-level drag/drop wiring, told
  * apart by dataTransfer type (readable during dragover, unlike the actual
  * value, which only becomes readable on drop):
  *  - 'text/ce-section-move'  an existing section being reordered
  *  - 'text/ce-add-section'   a new section from the palette (section-level target)
  *  - 'text/ce-add-block'     a new block from the palette (element-level target,
  *                            inserted inside whichever section it's dropped on)
+ *  - 'text/ce-block-move'    an existing block being reordered/moved to another
+ *                            section (element-level target, same as ce-add-block)
  */
 function setupDragAndDrop(chrome) {
-  let currentTarget = null;
-
   document.addEventListener('dragover', (event) => {
     const types = event.dataTransfer.types;
     const isSectionMove = types.includes('text/ce-section-move');
     const isAddSection = types.includes('text/ce-add-section');
     const isAddBlock = types.includes('text/ce-add-block');
-    if (!isSectionMove && !isAddSection && !isAddBlock) return;
+    const isBlockMove = types.includes('text/ce-block-move');
+    if (!isSectionMove && !isAddSection && !isAddBlock && !isBlockMove) return;
     event.preventDefault(); // required to allow a drop
-    currentTarget = (isSectionMove || isAddSection)
-      ? computeSectionDropTarget(event.clientY)
-      : computeDropTarget(event.clientX, event.clientY);
-    if (currentTarget) showDropIndicator(chrome.dropIndicator, currentTarget.indicatorRect);
+    autoScrollForDrag(event.clientY);
+    const target = resolveDropTarget(event, isSectionMove, isAddSection);
+    if (target) showDropIndicator(chrome.dropIndicator, target.indicatorRect);
     else hideDropIndicator(chrome.dropIndicator);
   });
 
@@ -977,13 +1459,24 @@ function setupDragAndDrop(chrome) {
 
   document.addEventListener('drop', (event) => {
     const statusContainer = chrome.palette.querySelector('.ce-palette-status');
+    const types = event.dataTransfer.types;
+    const isSectionMove = types.includes('text/ce-section-move');
+    const isAddSection = types.includes('text/ce-add-section');
 
     const sectionMoveData = event.dataTransfer.getData('text/ce-section-move');
     if (sectionMoveData !== '') {
       event.preventDefault();
       hideDropIndicator(chrome.dropIndicator);
-      moveDroppedSection(Number(sectionMoveData), currentTarget, statusContainer);
-      currentTarget = null;
+      moveDroppedSection(Number(sectionMoveData), resolveDropTarget(event, isSectionMove, isAddSection), statusContainer);
+      return;
+    }
+
+    const blockMoveData = event.dataTransfer.getData('text/ce-block-move');
+    if (blockMoveData !== '') {
+      event.preventDefault();
+      hideDropIndicator(chrome.dropIndicator);
+      const { name, occurrenceIndex } = JSON.parse(blockMoveData);
+      moveDroppedBlock(name, occurrenceIndex, resolveDropTarget(event, isSectionMove, isAddSection), statusContainer);
       return;
     }
 
@@ -993,8 +1486,7 @@ function setupDragAndDrop(chrome) {
     if (!templateKey) return;
     event.preventDefault();
     hideDropIndicator(chrome.dropIndicator);
-    addDroppedItem(templateKey, currentTarget, statusContainer);
-    currentTarget = null;
+    addDroppedItem(templateKey, resolveDropTarget(event, isSectionMove, isAddSection), statusContainer);
   });
 
   document.addEventListener('dragend', () => hideDropIndicator(chrome.dropIndicator));
@@ -1039,6 +1531,63 @@ function setupSectionDragHandle(chrome) {
     event.dataTransfer.effectAllowed = 'move';
   });
 
+  // A section with no exposed pixel of its own (e.g. no `grid` set yet, so
+  // its blocks stack full-width and cover it edge to edge - precisely the
+  // case where selecting the section to go fix that is otherwise
+  // impossible) can still always be selected via its own grip handle.
+  chrome.sectionHandle.addEventListener('click', (event) => {
+    if (!currentSection) return;
+    event.stopPropagation();
+    selectUnit(chrome, { type: 'section', el: currentSection });
+  });
+
+  window.addEventListener('scroll', reposition, true);
+  window.addEventListener('resize', reposition);
+}
+
+/**
+ * A small grip handle that follows whichever block the mouse is over
+ * (skipping our own chrome and the section grip), draggable to reorder that
+ * block within its section or move it into a different section entirely -
+ * see computeDropTarget/moveDroppedBlock. Positioned at the block's
+ * top-right corner (vs. the section grip's top-left) so the two don't
+ * overlap when a block is a section's only/first child.
+ */
+function setupBlockDragHandle(chrome) {
+  let currentBlock = null;
+
+  const reposition = () => {
+    if (!currentBlock) return;
+    const rect = currentBlock.getBoundingClientRect();
+    chrome.blockHandle.style.top = `${rect.top + 8}px`;
+    chrome.blockHandle.style.left = `${rect.right - 28}px`;
+  };
+
+  document.addEventListener('mouseover', (event) => {
+    if (event.target.closest('#ce-inspector, #ce-palette, #ce-section-handle, #ce-block-handle')) return;
+    const blockEl = event.target.closest(BLOCK_SELECTOR);
+    if (!blockEl || blockEl === currentBlock) return;
+    currentBlock = blockEl;
+    chrome.blockHandle.style.display = 'flex';
+    reposition();
+  });
+
+  document.addEventListener('mouseout', (event) => {
+    if (!currentBlock) return;
+    const leavingTo = event.relatedTarget;
+    if (leavingTo && (currentBlock.contains(leavingTo) || leavingTo.closest?.('#ce-block-handle'))) return;
+    currentBlock = null;
+    chrome.blockHandle.style.display = 'none';
+  });
+
+  chrome.blockHandle.addEventListener('dragstart', (event) => {
+    if (!currentBlock) return;
+    const name = normalizeBlockName(getBlockName(currentBlock));
+    const occurrenceIndex = blockOrdinal(currentBlock);
+    event.dataTransfer.setData('text/ce-block-move', JSON.stringify({ name, occurrenceIndex }));
+    event.dataTransfer.effectAllowed = 'move';
+  });
+
   window.addEventListener('scroll', reposition, true);
   window.addEventListener('resize', reposition);
 }
@@ -1059,6 +1608,7 @@ async function init() {
   buildPalette(chrome);
   setupDragAndDrop(chrome);
   setupSectionDragHandle(chrome);
+  setupBlockDragHandle(chrome);
   document.body.classList.add('ce-has-palette'); // shifts page content right, out from under the palette
 }
 

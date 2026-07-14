@@ -171,6 +171,46 @@ body.ce-has-palette {
   transition: background 0.3s ease;
 }
 
+.ce-field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ce-field-label-row label {
+  margin-bottom: 0;
+}
+
+.ce-field-remove {
+  background: none;
+  border: none;
+  color: #9a9aa8;
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+.ce-field-remove:hover {
+  color: #ff6b6b;
+}
+
+.ce-checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: #e8e8ef;
+  text-transform: none;
+  letter-spacing: normal;
+  margin: 4px 0;
+  cursor: pointer;
+}
+
+.ce-checkbox-label input[type='checkbox'] {
+  margin: 0;
+}
+
 #ce-inspector .ce-field.ce-flash,
 #ce-palette .ce-field.ce-flash {
   background: rgba(47, 209, 176, 0.15);
@@ -194,6 +234,61 @@ body.ce-has-palette {
 #ce-inspector textarea,
 #ce-palette textarea {
   min-height: 60px;
+}
+
+#ce-inspector select,
+#ce-palette select {
+  width: 100%;
+  box-sizing: border-box;
+  background: #101014;
+  color: #e8e8ef;
+  border: 1px solid #33333d;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, monospace;
+  margin-bottom: 4px;
+}
+
+#ce-inspector .ce-richtext-toolbar,
+#ce-palette .ce-richtext-toolbar {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 4px;
+}
+
+#ce-inspector .ce-rt-btn,
+#ce-palette .ce-rt-btn {
+  background: none;
+  border: 1px solid #33333d;
+  color: #e8e8ef;
+  border-radius: 4px;
+  padding: 3px 8px;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, monospace;
+  cursor: pointer;
+}
+
+#ce-inspector .ce-rt-btn:hover,
+#ce-palette .ce-rt-btn:hover {
+  border-color: #6d5efc;
+}
+
+#ce-inspector .ce-richtext,
+#ce-palette .ce-richtext {
+  width: 100%;
+  box-sizing: border-box;
+  background: #101014;
+  color: #e8e8ef;
+  border: 1px solid #33333d;
+  border-radius: 4px;
+  padding: 6px 8px;
+  font: 12px/1.4 ui-monospace, SFMono-Regular, monospace;
+  min-height: 60px;
+  overflow-y: auto;
+}
+
+#ce-inspector .ce-richtext:focus,
+#ce-palette .ce-richtext:focus {
+  outline: 1px solid #6d5efc;
 }
 
 #ce-inspector button.ce-primary,
@@ -296,6 +391,15 @@ body.ce-has-palette {
   display: none;
 }
 
+/* Shown instead of the default horizontal line when a drop resolves within a
+   grid row of same-width children (e.g. a row of cards) - a vertical line at
+   the exact before/after boundary between two cards, rather than a
+   horizontal line that would be meaningless mid-row. */
+#ce-drop-indicator.ce-drop-indicator--vertical {
+  width: 3px;
+  height: auto;
+}
+
 #ce-section-handle {
   position: fixed;
   display: none;
@@ -316,5 +420,27 @@ body.ce-has-palette {
 }
 
 #ce-section-handle:active {
+  cursor: grabbing;
+}
+
+#ce-block-handle {
+  position: fixed;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  background: #26262e;
+  border: 1px solid #6d5efc;
+  color: #6d5efc;
+  font-size: 14px;
+  line-height: 1;
+  cursor: grab;
+  z-index: 2147483001;
+  user-select: none;
+}
+
+#ce-block-handle:active {
   cursor: grabbing;
 }
