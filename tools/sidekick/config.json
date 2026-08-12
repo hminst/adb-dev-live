@@ -2,7 +2,8 @@
     "sidekick": {
       "project": "Author Kit Demo",
       "editUrlLabel": "Document Authoring",
-      "editUrlPattern": "https://da.live/edit#/{{org}}/{{site}}{{pathname}}",
+      "editUrlPattern": "https://da.live/#/{{org}}/{{site}}{{pathname}}",
+      
       "plugins": [
         {
           "id": "view-tags",
